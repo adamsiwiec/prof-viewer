@@ -62,6 +62,7 @@ pub struct Item {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ItemMeta {
     pub title: String,
+    pub item_uid: ItemUID,
     pub fields: Vec<(String, Field)>,
 }
 
