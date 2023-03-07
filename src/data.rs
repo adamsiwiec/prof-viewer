@@ -63,7 +63,6 @@ pub struct Item {
 pub struct ItemMeta {
     pub item_uid: ItemUID,
     pub title: String,
-    pub item_uid: ItemUID,
     pub fields: Vec<(String, Field)>,
 }
 
