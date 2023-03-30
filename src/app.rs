@@ -1154,7 +1154,7 @@ impl eframe::App for ProfApp {
                     };
 
                     let button =
-                        egui::Button::new(egui::RichText::new("🛠").color(debug_color).size(16.0))
+                        egui::Button::new(egui::RichText::new("🛠 Debug").color(debug_color).size(12.0))
                             .frame(true);
                     if ui
                         .add(button)
