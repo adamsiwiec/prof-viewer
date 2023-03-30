@@ -87,6 +87,13 @@ struct Window {
 }
 
 #[derive(Default, Deserialize, Serialize)]
+struct ZoomState {
+    levels: Vec<Interval>,
+    index: usize,
+    zoom_count: u32, // factor out
+}
+
+#[derive(Default, Deserialize, Serialize)]
 struct Context {
     row_height: f32,
 
@@ -106,6 +113,8 @@ struct Context {
     slot_rect: Option<Rect>,
 
     debug: bool,
+
+    zoom_state: ZoomState,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -842,9 +851,8 @@ impl ProfApp {
         result.windows.push(Window::new(data_source, 0));
         let window = result.windows.last().unwrap();
         result.cx.total_interval = window.config.interval;
-        result.cx.view_interval = result.cx.total_interval;
-
         result.extra_source = extra_source;
+        Self::zoom(&mut result.cx, window.config.interval);
 
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -852,6 +860,71 @@ impl ProfApp {
         }
 
         result
+    }
+
+    fn zoom(cx: &mut Context, interval: Interval) {
+        if cx.view_interval == interval {
+            return;
+        }
+
+        cx.view_interval = interval;
+        cx.zoom_state.levels.truncate(cx.zoom_state.index + 1);
+        cx.zoom_state.levels.push(cx.view_interval);
+        cx.zoom_state.index = cx.zoom_state.levels.len() - 1;
+        cx.zoom_state.zoom_count = 0;
+    }
+
+    fn undo_zoom(cx: &mut Context) {
+        if cx.zoom_state.index == 0 {
+            return;
+        }
+        cx.zoom_state.index -= 1;
+        cx.view_interval = cx.zoom_state.levels[cx.zoom_state.index];
+        cx.zoom_state.zoom_count = 0;
+    }
+
+    fn redo_zoom(cx: &mut Context) {
+        if cx.zoom_state.index == cx.zoom_state.levels.len() - 1 {
+            return;
+        }
+        cx.zoom_state.index += 1;
+        cx.view_interval = cx.zoom_state.levels[cx.zoom_state.index];
+        cx.zoom_state.zoom_count = 0;
+    }
+
+    fn keyboard(ctx: &egui::Context, cx: &mut Context) {
+        // Focus is elsewhere, don't check any keys
+        if ctx.memory(|m| m.focus().is_some()) {
+            return;
+        }
+
+        enum Actions {
+            UndoZoom,
+            RedoZoom,
+            ResetZoom,
+            NoAction,
+        }
+        let action = ctx.input(|i| {
+            if i.modifiers.ctrl {
+                if i.key_pressed(egui::Key::ArrowLeft) {
+                    Actions::UndoZoom
+                } else if i.key_pressed(egui::Key::ArrowRight) {
+                    Actions::RedoZoom
+                } else if i.key_pressed(egui::Key::Num0) {
+                    Actions::ResetZoom
+                } else {
+                    Actions::NoAction
+                }
+            } else {
+                Actions::NoAction
+            }
+        });
+        match action {
+            Actions::UndoZoom => ProfApp::undo_zoom(cx),
+            Actions::RedoZoom => ProfApp::redo_zoom(cx),
+            Actions::ResetZoom => ProfApp::zoom(cx, cx.total_interval),
+            Actions::NoAction => {}
+        }
     }
 
     fn cursor(ui: &mut egui::Ui, cx: &mut Context) {
@@ -902,7 +975,7 @@ impl ProfApp {
                 // Only set view interval if the drag was a certain amount
                 const MIN_DRAG_DISTANCE: f32 = 4.0;
                 if max - min > MIN_DRAG_DISTANCE {
-                    cx.view_interval = interval;
+                    ProfApp::zoom(cx, interval);
                 }
 
                 cx.drag_origin = None;
@@ -1027,11 +1100,11 @@ impl eframe::App for ProfApp {
                 windows.push(Window::new(extra, index));
                 let window = windows.last_mut().unwrap();
                 cx.total_interval = cx.total_interval.union(window.config.interval);
-                cx.view_interval = cx.total_interval;
+                ProfApp::zoom(cx, cx.total_interval);
             }
 
             if ui.button("Reset Zoom Level").clicked() {
-                cx.view_interval = cx.total_interval;
+                ProfApp::zoom(cx, cx.total_interval);
             }
 
             egui::Frame::group(ui.style()).show(ui, |ui| {
@@ -1086,7 +1159,7 @@ impl eframe::App for ProfApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             // Use body font to figure out how tall to draw rectangles.
             let font_id = TextStyle::Body.resolve(ui.style());
-            let row_height = ui.fonts().row_height(&font_id);
+            let row_height = ui.fonts(|f| f.row_height(&font_id));
             // Just set this on every frame for now
             cx.row_height = row_height;
 
@@ -1111,6 +1184,8 @@ impl eframe::App for ProfApp {
 
             Self::cursor(ui, cx);
         });
+
+        Self::keyboard(ctx, cx);
     }
 }
 
@@ -1198,7 +1273,8 @@ pub fn start(data_source: Box<dyn DataSource>, extra_source: Option<Box<dyn Data
         "Legion Prof",
         native_options,
         Box::new(|cc| Box::new(ProfApp::new(cc, data_source, extra_source))),
-    );
+    )
+    .expect("failed to start eframe");
 }
 
 #[cfg(target_arch = "wasm32")]
