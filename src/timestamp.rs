@@ -40,6 +40,24 @@ pub struct Interval {
     pub start: Timestamp,
     pub stop: Timestamp, // exclusive
 }
+#[derive(Debug, PartialEq)]
+pub enum IntervalParseError {
+    NoValue,
+    InvalidValue,
+    NoUnit,
+    InvalidUnit,
+}
+
+impl fmt::Display for IntervalParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IntervalParseError::NoValue => write!(f, "no value"),
+            IntervalParseError::InvalidValue => write!(f, "invalid value"),
+            IntervalParseError::NoUnit => write!(f, "no unit"),
+            IntervalParseError::InvalidUnit => write!(f, "invalid unit"),
+        }
+    }
+}
 
 impl fmt::Display for Interval {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -123,5 +141,25 @@ impl Interval {
     // Convert [0,1] relative space into a timestamp
     pub fn lerp(self, value: f32) -> Timestamp {
         Timestamp((value * (self.duration_ns() as f32)).round() as i64 + self.start.0)
+    }
+
+    // convert a string like "500.0 s" to a timestamp
+    pub fn convert_str_to_timestamp(s: &str) -> Result<Timestamp, IntervalParseError> {
+        let mut parts = s.split_whitespace();
+        let value = parts.next().ok_or(IntervalParseError::NoValue)?;
+        let value = value.parse::<f32>().map_err(|_| IntervalParseError::InvalidValue)?;
+        let unit = parts.next().ok_or(IntervalParseError::NoUnit)?;
+        let unit = unit.to_lowercase();
+        let ns_per_us = 1_000;
+        let ns_per_ms = 1_000_000;
+        let ns_per_s = 1_000_000_000;
+        let ns = match unit.as_str() {
+            "ns" => value as i64,
+            "us" => (value * ns_per_us as f32) as i64,
+            "ms" => (value * ns_per_ms as f32) as i64,
+            "s" => (value * ns_per_s as f32) as i64,
+            _ => return Err(IntervalParseError::InvalidUnit),
+        };
+        Ok(Timestamp(ns))
     }
 }
