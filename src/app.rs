@@ -115,7 +115,7 @@ struct Context {
     toggle_dark_mode: bool,
 
     debug: bool,
-    
+
     zoom_state: ZoomState,
 }
 
