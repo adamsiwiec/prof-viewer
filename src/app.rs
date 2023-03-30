@@ -1123,26 +1123,6 @@ impl eframe::App for ProfApp {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-
-                    let debug_color = if cx.debug {
-                        ui.visuals().hyperlink_color
-                    } else {
-                        ui.visuals().text_color()
-                    };
-
-                    let button =
-                        egui::Button::new(egui::RichText::new("🛠").color(debug_color).size(18.0))
-                            .frame(false);
-                    if ui
-                        .add(button)
-                        .on_hover_text(format!(
-                            "Toggle debug mode {}",
-                            if cx.debug { "off" } else { "on" }
-                        ))
-                        .clicked()
-                    {
-                        cx.debug = !cx.debug;
-                    }
                     ui.label("powered by ");
                     ui.hyperlink_to("egui", "https://github.com/emilk/egui");
                     ui.label(" and ");
