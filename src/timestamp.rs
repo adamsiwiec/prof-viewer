@@ -147,7 +147,9 @@ impl Interval {
     pub fn convert_str_to_timestamp(s: &str) -> Result<Timestamp, IntervalParseError> {
         let mut parts = s.split_whitespace();
         let value = parts.next().ok_or(IntervalParseError::NoValue)?;
-        let value = value.parse::<f32>().map_err(|_| IntervalParseError::InvalidValue)?;
+        let value = value
+            .parse::<f32>()
+            .map_err(|_| IntervalParseError::InvalidValue)?;
         let unit = parts.next().ok_or(IntervalParseError::NoUnit)?;
         let unit = unit.to_lowercase();
         let ns_per_us = 1_000;
