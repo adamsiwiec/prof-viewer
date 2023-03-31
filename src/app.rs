@@ -1153,9 +1153,10 @@ impl eframe::App for ProfApp {
                         ui.visuals().text_color()
                     };
 
-                    let button =
-                        egui::Button::new(egui::RichText::new("🛠 Debug").color(debug_color).size(12.0))
-                            .frame(true);
+                    let button = egui::Button::new(
+                        egui::RichText::new("🛠 Debug").color(debug_color).size(12.0),
+                    )
+                    .frame(true);
                     if ui
                         .add(button)
                         .on_hover_text(format!(
