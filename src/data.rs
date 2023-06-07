@@ -7,7 +7,7 @@ use crate::timestamp::{Interval, Timestamp};
 // We encode EntryID as i64 because it allows us to pack Summary into the
 // value -1. Users shouldn't need to know about this and interact through the
 // methods below, or via EntryIndex.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct EntryID(Vec<i64>);
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -17,7 +17,7 @@ pub enum EntryIndex {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Initializer {
+pub struct Layout {
     pub entry_info: EntryInfo,
     pub interval: Interval,
 }
@@ -72,12 +72,6 @@ pub struct ItemMeta {
     pub fields: Vec<(String, Field)>,
 }
 
-impl PartialEq for ItemMeta {
-    fn eq(&self, other: &Self) -> bool {
-        self.item_uid == other.item_uid
-    }
-}
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct TileID(pub Interval);
 
@@ -103,7 +97,7 @@ pub struct SlotMetaTile {
 }
 
 pub trait DataSource {
-    fn fetch_info(&mut self) -> Initializer;
+    fn fetch_layout(&mut self) -> Layout;
     fn request_tiles(&mut self, entry_id: &EntryID, request_interval: Interval) -> Vec<TileID>;
     fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID) -> SummaryTile;
     fn fetch_slot_tile(&mut self, entry_id: &EntryID, tile_id: TileID) -> SlotTile;

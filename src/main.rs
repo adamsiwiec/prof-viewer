@@ -6,8 +6,8 @@ use rand::Rng;
 use std::collections::BTreeMap;
 
 use legion_prof_viewer::data::{
-    DataSource, EntryID, EntryInfo, Field, Initializer, Item, ItemMeta, ItemUID, SlotMetaTile,
-    SlotTile, SummaryTile, TileID, UtilPoint,
+    DataSource, EntryID, EntryInfo, Field, Item, ItemMeta, ItemUID, Layout, SlotMetaTile, SlotTile,
+    SummaryTile, TileID, UtilPoint,
 };
 use legion_prof_viewer::deferred_data::DeferredDataSourceWrapper;
 use legion_prof_viewer::timestamp::{Interval, Timestamp};
@@ -111,7 +111,7 @@ impl RandomDataSource {
 
     fn generate_slot(&mut self, entry_id: &EntryID) -> &SlotCacheTile {
         if !self.slot_cache.contains_key(entry_id) {
-            let einfo = self.fetch_info();
+            let einfo = self.fetch_layout();
             let entry = einfo.get(entry_id);
 
             let max_rows = if let EntryInfo::Slot { max_rows, .. } = entry.unwrap() {
@@ -169,7 +169,7 @@ impl RandomDataSource {
         self.slot_cache.get(entry_id).unwrap()
     }
 
-    fn fetch_info(&mut self) -> EntryInfo {
+    fn fetch_layout(&mut self) -> EntryInfo {
         if let Some(ref info) = self.info {
             return info.clone();
         }
@@ -230,9 +230,9 @@ impl RandomDataSource {
 }
 
 impl DataSource for RandomDataSource {
-    fn fetch_info(&mut self) -> Initializer {
-        Initializer {
-            entry_info: self.fetch_info(),
+    fn fetch_layout(&mut self) -> Layout {
+        Layout {
+            entry_info: self.fetch_layout(),
             interval: self.interval(),
         }
     }

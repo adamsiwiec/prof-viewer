@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use crate::data::{DataSource, EntryID, Initializer, SlotMetaTile, SlotTile, SummaryTile, TileID};
+use crate::data::{DataSource, EntryID, Layout, SlotMetaTile, SlotTile, SummaryTile, TileID};
 use crate::timestamp::Interval;
 
 pub trait DeferredDataSource {
-    fn fetch_info(&mut self);
-    fn get_info(&mut self) -> Option<Initializer>;
+    fn fetch_layout(&mut self);
+    fn get_info(&mut self) -> Option<Layout>;
     fn fetch_tiles(&mut self, entry_id: EntryID, request_interval: Interval);
     fn get_tiles(&mut self, entry_id: EntryID) -> Vec<TileID>;
     fn fetch_summary_tile(&mut self, entry_id: EntryID, tile_id: TileID);
@@ -37,10 +37,10 @@ impl DeferredDataSourceWrapper {
 }
 
 impl DeferredDataSource for DeferredDataSourceWrapper {
-    fn fetch_info(&mut self) {}
+    fn fetch_layout(&mut self) {}
 
-    fn get_info(&mut self) -> Option<Initializer> {
-        Some(self.data_source.fetch_info())
+    fn get_info(&mut self) -> Option<Layout> {
+        Some(self.data_source.fetch_layout())
     }
 
     fn fetch_tiles(&mut self, entry_id: EntryID, request_interval: Interval) {

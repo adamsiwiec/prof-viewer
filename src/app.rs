@@ -90,7 +90,6 @@ struct Window {
     kinds: Vec<String>,
     config: Config,
     tile_meta_cache: BTreeMap<(EntryID, TileID), Option<SlotMetaTile>>,
-
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -799,7 +798,6 @@ impl Window {
             kinds: init.entry_info.kinds(),
             config,
             tile_meta_cache: BTreeMap::new(),
-
         }
     }
 
@@ -944,9 +942,9 @@ impl ProfApp {
         };
 
         let mut data_source = data_source;
-        data_source.fetch_info();
+        data_source.fetch_layout();
         if let Some(ref mut extra_source) = result.extra_source {
-            extra_source.fetch_info();
+            extra_source.fetch_layout();
         }
 
         result.windows.clear();
