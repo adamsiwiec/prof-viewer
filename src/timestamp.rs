@@ -129,7 +129,7 @@ impl Interval {
         Timestamp((value * (self.duration_ns() as f32)).round() as i64 + self.start.0)
     }
 
-    // convert a string like "500.0 s" to a timestamp
+    
     pub fn convert_str_to_timestamp(s: &str) -> Result<Timestamp, String> {
         let mut parts = s.split_whitespace();
         let value = parts.next().ok_or("no value")?;

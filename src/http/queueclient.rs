@@ -106,10 +106,6 @@ impl HTTPQueueDataSource {
     }
 
     fn queue_work(&mut self, mut work: Work) {
-        // log("queue_work");
-
-        // create a mutable reference to work variable
-
         let url: Url = match &work {
             Work::FetchSlotMetaTile(_entry_id, _tile_id, _data) => self
                 .url
@@ -172,11 +168,8 @@ impl HTTPQueueDataSource {
 
         let queue = self.queue.clone();
 
+        // fetch Work
         fetch(request, move |result: Result<ProfResponse, String>| {
-            // deserialize response into a vector of TileIDs
-
-            // process response as data type in work
-
             let result = result.unwrap();
             let text = &result.body;
 
@@ -225,6 +218,9 @@ impl HTTPQueueDataSource {
         });
     }
 }
+
+
+// fetch_info -> create work object / fetch request  ------> fetch returns, object is deserialized, then added to queue -> checks queue and processes objects get_info() -> dump whatever is the associated data
 
 impl DeferredDataSource for HTTPQueueDataSource {
     fn fetch_info(&mut self) {
