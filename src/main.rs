@@ -14,11 +14,12 @@ use legion_prof_viewer::timestamp::{Interval, Timestamp};
 
 fn main() {
     legion_prof_viewer::app::start(
-        Box::new(DeferredDataSourceWrapper::new(Box::new(
-            RandomDataSource::default(),
-        ))),
-        Some(Box::new(DeferredDataSourceWrapper::new(Box::new(
-            RandomDataSource::default(),
+        Box::new(DeferredDataSourceWrapper::new(
+            Box::<RandomDataSource>::default(),
+        )),
+        Some(Box::new(DeferredDataSourceWrapper::new(Box::<
+            RandomDataSource,
+        >::default(
         )))),
     );
 }
