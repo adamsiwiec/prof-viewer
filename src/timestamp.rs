@@ -41,6 +41,31 @@ pub struct Interval {
     pub stop: Timestamp, // exclusive
 }
 
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Copy)]
+pub enum IntervalParseError {
+    NoValue,
+    InvalidValue,
+    NoUnit,
+    InvalidUnit,
+    StartAfterStop,
+    StartAfterEnd,
+    StopBeforeStart,
+}
+
+impl fmt::Display for IntervalParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IntervalParseError::NoValue => write!(f, "no value"),
+            IntervalParseError::InvalidValue => write!(f, "invalid value"),
+            IntervalParseError::NoUnit => write!(f, "no unit"),
+            IntervalParseError::InvalidUnit => write!(f, "invalid unit"),
+            IntervalParseError::StartAfterStop => write!(f, "start after stop"),
+            IntervalParseError::StartAfterEnd => write!(f, "start after end"),
+            IntervalParseError::StopBeforeStart => write!(f, "stop before start"),
+        }
+    }
+}
+
 impl fmt::Display for Interval {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Time is stored in nanoseconds. But display in larger units if possible.
@@ -123,5 +148,35 @@ impl Interval {
     // Convert [0,1] relative space into a timestamp
     pub fn lerp(self, value: f32) -> Timestamp {
         Timestamp((value * (self.duration_ns() as f32)).round() as i64 + self.start.0)
+    }
+
+    // convert a string like "500.0 s" to a timestamp
+    pub fn parse_timestamp(s: &str) -> Result<Timestamp, IntervalParseError> {
+        let mut parts = s.split_whitespace();
+        let prefix = parts.next().ok_or(IntervalParseError::NoValue)?;
+        let mut unit = prefix.trim_start_matches(|c: char| c.is_numeric() || c == '.');
+        let value: &str = prefix.trim_end_matches(|c: char| c.is_alphabetic());
+        if unit.is_empty() {
+            unit = parts.next().ok_or(IntervalParseError::InvalidUnit)?;
+        }
+
+        let value = value
+            .parse::<f64>()
+            .map_err(|_| IntervalParseError::InvalidValue)?;
+        if parts.next().is_some() {
+            return Err(IntervalParseError::InvalidValue);
+        }
+        let unit = unit.to_lowercase();
+        let ns_per_us = 1_000;
+        let ns_per_ms = 1_000_000;
+        let ns_per_s = 1_000_000_000;
+        let ns = match unit.as_str() {
+            "ns" => value as i64,
+            "us" => (value * ns_per_us as f64) as i64,
+            "ms" => (value * ns_per_ms as f64) as i64,
+            "s" => (value * ns_per_s as f64) as i64,
+            _ => return Err(IntervalParseError::InvalidUnit),
+        };
+        Ok(Timestamp(ns))
     }
 }
