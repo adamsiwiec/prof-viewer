@@ -153,16 +153,19 @@ impl Interval {
     // convert a string like "500.0 s" to a timestamp
     pub fn parse_timestamp(s: &str) -> Result<Timestamp, IntervalParseError> {
         let mut parts = s.split_whitespace();
-        let prefix = parts.next().ok_or(IntervalParseError::NoValue)?;
+        let prefix: &str = parts.next().ok_or(IntervalParseError::NoValue)?;
         let mut unit = prefix.trim_start_matches(|c: char| c.is_numeric() || c == '.');
         let value: &str = prefix.trim_end_matches(|c: char| c.is_alphabetic());
-        if unit.is_empty() {
-            unit = parts.next().ok_or(IntervalParseError::InvalidUnit)?;
+        if value.is_empty() {
+            return Err(IntervalParseError::NoValue);
         }
-
         let value = value
             .parse::<f64>()
             .map_err(|_| IntervalParseError::InvalidValue)?;
+        if unit.is_empty() {
+            unit = parts.next().ok_or(IntervalParseError::NoUnit)?;
+        }
+
         if parts.next().is_some() {
             return Err(IntervalParseError::InvalidValue);
         }
@@ -178,5 +181,99 @@ impl Interval {
             _ => return Err(IntervalParseError::InvalidUnit),
         };
         Ok(Timestamp(ns))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // test all the different ways to parse a timestamp
+    #[test]
+    fn test_ms() {
+        assert_eq!(
+            Interval::parse_timestamp("500.0 ms").unwrap(),
+            Timestamp(500_000_000)
+        );
+    }
+
+    #[test]
+    fn test_us() {
+        assert_eq!(
+            Interval::parse_timestamp("500.0 us").unwrap(),
+            Timestamp(500_000)
+        );
+    }
+
+    #[test]
+    fn test_ns() {
+        assert_eq!(
+            Interval::parse_timestamp("500.0 ns").unwrap(),
+            Timestamp(500)
+        );
+    }
+
+    #[test]
+    fn test_s() {
+        assert_eq!(
+            Interval::parse_timestamp("500.0 s").unwrap(),
+            Timestamp(500_000_000_000)
+        );
+    }
+
+    #[test]
+    fn test_no_unit() {
+        assert_eq!(
+            Interval::parse_timestamp("500.0").unwrap_err(),
+            IntervalParseError::NoUnit
+        );
+    }
+
+    #[test]
+    fn test_no_value() {
+        assert_eq!(
+            Interval::parse_timestamp("ms").unwrap_err(),
+            IntervalParseError::NoValue
+        );
+    }
+
+    #[test]
+    fn test_invalid_unit() {
+        assert_eq!(
+            Interval::parse_timestamp("500.0 foo").unwrap_err(),
+            IntervalParseError::InvalidUnit
+        );
+    }
+
+    #[test]
+    fn test_invalid_value() {
+        assert_eq!(
+            Interval::parse_timestamp("foo ms").unwrap_err(),
+            IntervalParseError::NoValue
+        );
+    }
+
+    #[test]
+    fn test_invalid_value2() {
+        assert_eq!(
+            Interval::parse_timestamp("500.0.0 ms").unwrap_err(),
+            IntervalParseError::InvalidValue
+        );
+    }
+
+    #[test]
+    fn test_invalid_value3() {
+        assert_eq!(
+            Interval::parse_timestamp("500.0.0").unwrap_err(),
+            IntervalParseError::InvalidValue
+        );
+    }
+
+    #[test]
+    fn test_extra() {
+        assert_eq!(
+            Interval::parse_timestamp("500.0 ms asdfadf").unwrap_err(),
+            IntervalParseError::InvalidValue
+        );
     }
 }
