@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
@@ -1375,6 +1376,7 @@ impl eframe::App for ProfApp {
         });
 
         Self::keyboard(ctx, cx);
+        ctx.request_repaint_after(Duration::from_millis(100));
     }
 }
 
