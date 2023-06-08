@@ -4,4 +4,6 @@ pub mod app;
 pub mod data;
 pub mod deferred_data;
 pub mod http;
+pub mod logging;
+pub mod queue;
 pub mod timestamp;

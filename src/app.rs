@@ -1036,6 +1036,12 @@ impl ProfApp {
         // Hack: the UI rect we have at this point is not where the
         // timeline is being drawn. So fish out the coordinates we
         // need to draw the correct rect.
+
+        // Sometimes slot_rect is None when initializing the UI
+        if cx.slot_rect.is_none() {
+            return;
+        }
+
         let ui_rect = ui.min_rect();
         let slot_rect = cx.slot_rect.unwrap();
         let rect = Rect::from_min_max(
