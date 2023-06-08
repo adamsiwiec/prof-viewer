@@ -3,7 +3,9 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-use egui::{Align2, Color32, NumExt, Pos2, Rect, ScrollArea, Slider, Stroke, TextStyle, Vec2};
+use egui::{
+    Align2, Color32, NumExt, Pos2, Rect, RichText, ScrollArea, Slider, Stroke, TextStyle, Vec2,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::data::{
@@ -11,7 +13,7 @@ use crate::data::{
     SummaryTileData, TileID, UtilPoint,
 };
 use crate::deferred_data::{CountingDeferredDataSource, DeferredDataSource};
-use crate::timestamp::Interval;
+use crate::timestamp::{Interval, IntervalParseError};
 
 /// Overview:
 ///   ProfApp -> Context, Window *
@@ -121,6 +123,14 @@ struct Context {
     debug: bool,
 
     zoom_state: ZoomState,
+    #[serde(skip)]
+    view_interval_start_buffer: String,
+    #[serde(skip)]
+    view_interval_stop_buffer: String,
+    #[serde(skip)]
+    view_interval_start_error: Option<IntervalParseError>,
+    #[serde(skip)]
+    view_interval_stop_error: Option<IntervalParseError>,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -835,7 +845,10 @@ impl Window {
     }
 
     fn content(&mut self, ui: &mut egui::Ui, cx: &mut Context) {
-        ui.heading(format!("Profile {}", self.index));
+        ui.horizontal(|ui| {
+            ui.heading(format!("Profile {}", self.index));
+            ui.label(cx.view_interval.to_string())
+        });
 
         ScrollArea::vertical()
             .auto_shrink([false; 2])
@@ -896,13 +909,89 @@ impl Window {
         });
     }
 
-    fn controls(&mut self, ui: &mut egui::Ui, cx: &Context) {
+    fn modify_interval(&mut self, ui: &mut egui::Ui, cx: &mut Context) {
+        ui.subheading("Interval", cx);
+        let start_res: egui::Response = ui
+            .horizontal(|ui| {
+                ui.label("Start:");
+                ui.text_edit_singleline(&mut cx.view_interval_start_buffer)
+            })
+            .inner;
+
+        if let Some(error) = cx.view_interval_start_error {
+            ui.label(RichText::new(error.to_string()).color(Color32::RED));
+        }
+
+        let stop_res = ui
+            .horizontal(|ui| {
+                ui.label("Stop:");
+                ui.text_edit_singleline(&mut cx.view_interval_stop_buffer)
+            })
+            .inner;
+
+        if let Some(error) = cx.view_interval_stop_error {
+            ui.label(RichText::new(error.to_string()).color(Color32::RED));
+        }
+
+        if start_res.lost_focus()
+            && cx.view_interval_start_buffer != cx.view_interval.start.to_string()
+        {
+            match Interval::parse_timestamp(&cx.view_interval_start_buffer) {
+                Ok(start) => {
+                    // validate timestamp
+                    if start > cx.view_interval.stop {
+                        cx.view_interval_start_error = Some(IntervalParseError::StartAfterStop);
+                        return;
+                    }
+                    if start > cx.total_interval.stop {
+                        cx.view_interval_start_error = Some(IntervalParseError::StartAfterEnd);
+                        return;
+                    }
+                    cx.view_interval.start = start;
+                    ProfApp::zoom(cx, cx.view_interval);
+                    cx.view_interval_start_error = None;
+                    cx.view_interval_stop_error = None;
+                }
+                Err(e) => {
+                    cx.view_interval_start_error = Some(e);
+                }
+            }
+        }
+        if stop_res.lost_focus()
+            && cx.view_interval_stop_buffer != cx.view_interval.stop.to_string()
+        {
+            match Interval::parse_timestamp(&cx.view_interval_stop_buffer) {
+                Ok(stop) => {
+                    // validate timestamp
+                    if stop < cx.view_interval.start {
+                        cx.view_interval_stop_error = Some(IntervalParseError::StopBeforeStart);
+                        return;
+                    }
+                    cx.view_interval.stop = stop;
+                    ProfApp::zoom(cx, cx.view_interval);
+                    cx.view_interval_start_error = None;
+                    cx.view_interval_stop_error = None;
+                }
+                Err(e) => {
+                    cx.view_interval_stop_error = Some(e);
+                }
+            }
+        }
+    }
+
+    fn controls(&mut self, ui: &mut egui::Ui, cx: &mut Context) {
         const WIDGET_PADDING: f32 = 8.0;
         ui.heading(format!("Profile {}: Controls", self.index));
         ui.add_space(WIDGET_PADDING);
         self.node_selection(ui, cx);
         ui.add_space(WIDGET_PADDING);
         self.expand_collapse(ui, cx);
+        ui.add_space(WIDGET_PADDING);
+        self.modify_interval(ui, cx);
+        ui.add_space(WIDGET_PADDING);
+        if ui.button("Reset Zoom Level").clicked() {
+            ProfApp::zoom(cx, cx.total_interval);
+        }
     }
 }
 
@@ -956,6 +1045,8 @@ impl ProfApp {
         cx.zoom_state.levels.push(cx.view_interval);
         cx.zoom_state.index = cx.zoom_state.levels.len() - 1;
         cx.zoom_state.zoom_count = 0;
+        cx.view_interval_start_buffer = cx.view_interval.start.to_string();
+        cx.view_interval_stop_buffer = cx.view_interval.stop.to_string();
     }
 
     fn undo_zoom(cx: &mut Context) {
@@ -965,6 +1056,8 @@ impl ProfApp {
         cx.zoom_state.index -= 1;
         cx.view_interval = cx.zoom_state.levels[cx.zoom_state.index];
         cx.zoom_state.zoom_count = 0;
+        cx.view_interval_start_buffer = cx.view_interval.start.to_string();
+        cx.view_interval_stop_buffer = cx.view_interval.stop.to_string();
     }
 
     fn redo_zoom(cx: &mut Context) {
@@ -974,6 +1067,8 @@ impl ProfApp {
         cx.zoom_state.index += 1;
         cx.view_interval = cx.zoom_state.levels[cx.zoom_state.index];
         cx.zoom_state.zoom_count = 0;
+        cx.view_interval_start_buffer = cx.view_interval.start.to_string();
+        cx.view_interval_stop_buffer = cx.view_interval.stop.to_string();
     }
 
     fn keyboard(ctx: &egui::Context, cx: &mut Context) {
