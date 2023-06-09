@@ -9,10 +9,10 @@ use actix_web::{
 
 use std::sync::{Arc, Mutex};
 
-use super::schema::FetchRequest;
+use super::schema::TileRequest;
 
 pub struct AppState {
-    pub data_source: Mutex<Box<dyn DataSource + Sync + Send + 'static>>,
+    pub data_source: Mutex<Box<dyn DataSource + Send + Sync + 'static>>,
 }
 
 pub struct DataSourceHTTPServer {
@@ -25,62 +25,53 @@ impl DataSourceHTTPServer {
     pub fn new(
         host: String,
         port: u16,
-        state: Box<dyn DataSource + Sync + Send + 'static>,
+        data_source: Box<dyn DataSource + Send + Sync + 'static>,
     ) -> Self {
         Self {
             host,
             port,
             state: AppState {
-                data_source: Mutex::new(state),
+                data_source: Mutex::new(data_source),
             },
         }
     }
 
-    async fn fetch_info(data: web::Data<AppState>) -> Result<impl Responder> {
-        let mutex = &data.data_source;
-        let mut source = mutex.lock().unwrap();
-        let result = source.fetch_info();
+    async fn fetch_info(state: web::Data<AppState>) -> Result<impl Responder> {
+        let mut data_source = state.data_source.lock().unwrap();
+        let result = data_source.fetch_info();
         Ok(web::Json(result))
     }
 
-    async fn fetch_tile_set(data: web::Data<AppState>) -> Result<impl Responder> {
-        let mutex = &data.data_source;
-        let mut source = mutex.lock().unwrap();
-
-        let result = source.fetch_tile_set();
+    async fn fetch_tile_set(state: web::Data<AppState>) -> Result<impl Responder> {
+        let mut data_source = state.data_source.lock().unwrap();
+        let result = data_source.fetch_tile_set();
         Ok(web::Json(result))
     }
 
     async fn fetch_summary_tile(
-        info: web::Json<FetchRequest>,
-        data: web::Data<AppState>,
+        req: web::Json<TileRequest>,
+        state: web::Data<AppState>,
     ) -> Result<impl Responder> {
-        let mutex = &data.data_source;
-        let mut source = mutex.lock().unwrap();
-
-        let result = source.fetch_summary_tile(&info.entry_id, info.tile_id);
+        let mut data_source = state.data_source.lock().unwrap();
+        let result = data_source.fetch_summary_tile(&req.entry_id, req.tile_id);
         Ok(web::Json(result))
     }
 
     async fn fetch_slot_tile(
-        info: web::Json<FetchRequest>,
-        data: web::Data<AppState>,
+        req: web::Json<TileRequest>,
+        state: web::Data<AppState>,
     ) -> Result<impl Responder> {
-        let mutex = &data.data_source;
-        let mut source = mutex.lock().unwrap();
-
-        let result = source.fetch_slot_tile(&info.entry_id, info.tile_id);
+        let mut data_source = state.data_source.lock().unwrap();
+        let result = data_source.fetch_slot_tile(&req.entry_id, req.tile_id);
         Ok(web::Json(result))
     }
 
     async fn fetch_slot_meta_tile(
-        info: web::Json<FetchRequest>,
-        data: web::Data<AppState>,
+        req: web::Json<TileRequest>,
+        state: web::Data<AppState>,
     ) -> Result<impl Responder> {
-        let mutex = &data.data_source;
-        let mut source = mutex.lock().unwrap();
-
-        let result = source.fetch_slot_meta_tile(&info.entry_id, info.tile_id);
+        let mut data_source = state.data_source.lock().unwrap();
+        let result = data_source.fetch_slot_meta_tile(&req.entry_id, req.tile_id);
         Ok(web::Json(result))
     }
 
