@@ -1,4 +1,4 @@
-use crate::data::DataSource;
+use std::sync::{Arc, Mutex};
 
 use actix_cors::Cors;
 use actix_web::{
@@ -7,9 +7,8 @@ use actix_web::{
     App, HttpServer, Responder, Result,
 };
 
-use std::sync::{Arc, Mutex};
-
-use super::schema::TileRequest;
+use crate::data::DataSource;
+use crate::http::schema::TileRequest;
 
 pub struct AppState {
     pub data_source: Mutex<Box<dyn DataSource + Send + Sync + 'static>>,
