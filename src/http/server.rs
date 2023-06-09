@@ -43,11 +43,11 @@ impl DataSourceHTTPServer {
         Ok(web::Json(result))
     }
 
-    async fn fetch_tiles(data: web::Data<AppState>) -> Result<impl Responder> {
+    async fn fetch_tile_set(data: web::Data<AppState>) -> Result<impl Responder> {
         let mutex = &data.data_source;
         let mut source = mutex.lock().unwrap();
 
-        let result = source.fetch_tile_sets();
+        let result = source.fetch_tile_set();
         Ok(web::Json(result))
     }
 
@@ -104,7 +104,7 @@ impl DataSourceHTTPServer {
                 .wrap(cors)
                 .app_data(state.clone())
                 .route("/info", web::post().to(Self::fetch_info))
-                .route("/tiles", web::post().to(Self::fetch_tiles))
+                .route("/tile_set", web::post().to(Self::fetch_tile_set))
                 .route("/summary_tile", web::post().to(Self::fetch_summary_tile))
                 .route("/slot_tile", web::post().to(Self::fetch_slot_tile))
                 .route(
