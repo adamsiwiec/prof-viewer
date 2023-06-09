@@ -6,4 +6,5 @@ pub mod deferred_data;
 pub mod http;
 pub mod logging;
 pub mod queue;
+pub mod search;
 pub mod timestamp;
