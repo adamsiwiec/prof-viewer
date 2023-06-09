@@ -18,7 +18,7 @@ use legion_prof_viewer::timestamp::{Interval, Timestamp};
 #[cfg(target_arch = "wasm32")]
 use legion_prof_viewer::console_log;
 #[cfg(target_arch = "wasm32")]
-use legion_prof_viewer::queue::queueclient::HTTPQueueDataSource;
+use legion_prof_viewer::http::client::HTTPClientDataSource;
 #[cfg(target_arch = "wasm32")]
 use url::Url;
 
@@ -42,22 +42,20 @@ fn main() {
 fn main() {
     let loc: web_sys::Location = web_sys::window().unwrap().location();
     let href: String = loc.href().expect("Unable to get window URL");
-    let browser_url = Url::parse(&href).expect("unable to parse url");
+    let browser_url = Url::parse(&href).expect("Unable to parse location URL");
 
-    let mut host: Option<Url> = None;
-    browser_url.query_pairs().for_each(|(key, value)| {
-        // check for host and port here
-        if key == "url" {
-            host = Some(Url::parse(&value).expect("Unable to parse url query parameter"));
-        }
-    });
-    if host.is_none() {
-        host = Some(Url::parse(DEFAULT_URL).expect("Unable to initialize default URL"));
-    }
+    let url = Url::parse(
+        browser_url
+            .query_pairs()
+            .find(|(key, _)| key == "url")
+            .map(|(_, value)| value)
+            .as_deref()
+            .unwrap_or(DEFAULT_URL),
+    )
+    .expect("Unable to parse query URL");
 
     console_log!("Initializing Legion Profiler Viewer");
-    // create queue
-    legion_prof_viewer::app::start(Box::new(HTTPQueueDataSource::new(host.unwrap())), None);
+    legion_prof_viewer::app::start(Box::new(HTTPClientDataSource::new(url)), None);
 }
 
 type SlotCacheTile = (Vec<Vec<Item>>, Vec<Vec<ItemMeta>>);
