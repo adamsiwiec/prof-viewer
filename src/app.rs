@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
@@ -6,7 +6,8 @@ use egui::{Align2, Color32, NumExt, Pos2, Rect, ScrollArea, Slider, Stroke, Text
 use serde::{Deserialize, Serialize};
 
 use crate::data::{
-    EntryID, EntryInfo, Field, SlotMetaTile, SlotTile, SummaryTile, TileID, UtilPoint,
+    DataSourceInfo, EntryID, EntryIndex, EntryInfo, Field, SlotMetaTileData, SlotTileData,
+    SummaryTileData, TileID, UtilPoint,
 };
 use crate::deferred_data::DeferredDataSource;
 use crate::timestamp::Interval;
@@ -44,10 +45,8 @@ use crate::timestamp::Interval;
 struct Summary {
     entry_id: EntryID,
     color: Color32,
-    sum_tiles: BTreeMap<TileID, Option<SummaryTile>>,
-    utilization: Vec<UtilPoint>,
+    tiles: BTreeMap<TileID, Option<SummaryTileData>>,
     last_view_interval: Option<Interval>,
-    is_inflating: bool,
 }
 
 struct Slot {
@@ -56,11 +55,10 @@ struct Slot {
     long_name: String,
     expanded: bool,
     max_rows: u64,
-    slot_tiles: BTreeMap<TileID, Option<SlotTile>>,
-    tiles: Vec<SlotTile>,
-    tile_metas: BTreeMap<(EntryID, TileID), Option<SlotMetaTile>>,
+    tile_ids: Vec<TileID>,
+    tiles: BTreeMap<TileID, Option<SlotTileData>>,
+    tile_metas: BTreeMap<TileID, Option<SlotMetaTileData>>,
     last_view_interval: Option<Interval>,
-    is_inflating: bool,
 }
 
 struct Panel<S: Entry> {
@@ -89,7 +87,6 @@ struct Window {
     index: u64,
     kinds: Vec<String>,
     config: Config,
-    tile_meta_cache: BTreeMap<(EntryID, TileID), Option<SlotMetaTile>>,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -128,22 +125,18 @@ struct Context {
 #[derive(Default, Deserialize, Serialize)]
 #[serde(default)] // deserialize missing fields as default value
 struct ProfApp {
+    // Data sources waiting to be turned into windows.
+    #[serde(skip)]
+    pending_data_sources: VecDeque<Box<dyn DeferredDataSource>>,
+
     #[serde(skip)]
     windows: Vec<Window>,
-
-    #[serde(skip)]
-    source: Option<Box<dyn DeferredDataSource>>,
-
-    #[serde(skip)]
-    extra_source: Option<Box<dyn DeferredDataSource>>,
 
     cx: Context,
 
     #[cfg(not(target_arch = "wasm32"))]
     #[serde(skip)]
     last_update: Option<Instant>,
-
-    initialized: bool,
 }
 
 trait Entry {
@@ -152,6 +145,9 @@ trait Entry {
     fn entry_id(&self) -> &EntryID;
     fn label_text(&self) -> &str;
     fn hover_text(&self) -> &str;
+
+    fn find_slot(&mut self, entry_id: &EntryID, level: u64) -> Option<&mut Slot>;
+    fn find_summary(&mut self, entry_id: &EntryID, level: u64) -> Option<&mut Summary>;
 
     fn label(&mut self, ui: &mut egui::Ui, rect: Rect) {
         let response = ui.allocate_rect(
@@ -207,22 +203,15 @@ trait Entry {
 
 impl Summary {
     fn clear(&mut self) {
-        self.utilization.clear();
+        self.tiles.clear();
     }
 
     fn inflate(&mut self, config: &mut Config, cx: &mut Context) {
-        self.is_inflating = true;
-        let interval = TileID(config.interval.intersection(cx.view_interval));
-        // HACK: since only one tile is ever made
-
-        if let std::collections::btree_map::Entry::Vacant(e) = self.sum_tiles.entry(interval) {
+        for tile_id in config.request_tiles(cx.view_interval) {
             config
                 .data_source
-                .fetch_summary_tile(self.entry_id.clone(), interval);
-            e.insert(None);
-        } else if let Some(sum_tile) = self.sum_tiles.get(&interval).unwrap() {
-            self.utilization.extend(sum_tile.utilization.clone());
-            self.is_inflating = false;
+                .fetch_summary_tile(&self.entry_id, tile_id);
+            self.tiles.insert(tile_id, None);
         }
     }
 }
@@ -231,11 +220,9 @@ impl Entry for Summary {
     fn new(info: &EntryInfo, entry_id: EntryID) -> Self {
         if let EntryInfo::Summary { color } = info {
             Self {
-                is_inflating: false,
                 entry_id,
                 color: *color,
-                sum_tiles: BTreeMap::new(),
-                utilization: Vec::new(),
+                tiles: BTreeMap::new(),
                 last_view_interval: None,
             }
         } else {
@@ -251,6 +238,15 @@ impl Entry for Summary {
     }
     fn hover_text(&self) -> &str {
         "Utilization Plot of Average Usage Over Time"
+    }
+
+    fn find_slot(&mut self, _entry_id: &EntryID, _level: u64) -> Option<&mut Slot> {
+        unreachable!()
+    }
+
+    fn find_summary(&mut self, entry_id: &EntryID, level: u64) -> Option<&mut Summary> {
+        assert_eq!(entry_id.index(level - 1)?, EntryIndex::Summary);
+        Some(self)
     }
 
     fn content(
@@ -274,7 +270,7 @@ impl Entry for Summary {
             self.clear();
         }
         self.last_view_interval = Some(cx.view_interval);
-        if self.utilization.is_empty() || self.is_inflating {
+        if self.tiles.is_empty() {
             self.inflate(config, cx);
         }
 
@@ -306,37 +302,42 @@ impl Entry for Summary {
         let mut last_util: Option<&UtilPoint> = None;
         let mut last_point: Option<Pos2> = None;
         let mut hover_util = None;
-        for util in &self.utilization {
-            let mut point = util_to_screen(util);
-            if let Some(mut last) = last_point {
-                let last_util = last_util.unwrap();
-                if cx
-                    .view_interval
-                    .overlaps(Interval::new(last_util.time, util.time))
-                {
-                    // Interpolate when out of view
-                    if last.x < rect.min.x {
-                        last = interpolate(last, point, rect.min.x);
-                    }
-                    if point.x > rect.max.x {
-                        point = interpolate(last, point, rect.max.x);
-                    }
+        for tile in self.tiles.values().flatten() {
+            for util in &tile.utilization {
+                let mut point = util_to_screen(util);
+                if let Some(mut last) = last_point {
+                    let last_util = last_util.unwrap();
+                    if cx
+                        .view_interval
+                        .overlaps(Interval::new(last_util.time, util.time))
+                    {
+                        // Interpolate when out of view
+                        if last.x < rect.min.x {
+                            last = interpolate(last, point, rect.min.x);
+                        }
+                        if point.x > rect.max.x {
+                            point = interpolate(last, point, rect.max.x);
+                        }
 
-                    ui.painter().line_segment([last, point], stroke);
+                        ui.painter().line_segment([last, point], stroke);
 
-                    if let Some(hover) = hover_pos {
-                        if last.x <= hover.x && hover.x < point.x {
-                            let interp = interpolate(last, point, hover.x);
-                            ui.painter()
-                                .circle_stroke(interp, TOOLTIP_RADIUS, visuals.fg_stroke);
-                            hover_util = Some(screen_to_util(interp));
+                        if let Some(hover) = hover_pos {
+                            if last.x <= hover.x && hover.x < point.x {
+                                let interp = interpolate(last, point, hover.x);
+                                ui.painter().circle_stroke(
+                                    interp,
+                                    TOOLTIP_RADIUS,
+                                    visuals.fg_stroke,
+                                );
+                                hover_util = Some(screen_to_util(interp));
+                            }
                         }
                     }
                 }
-            }
 
-            last_point = Some(point);
-            last_util = Some(util);
+                last_point = Some(point);
+                last_util = Some(util);
+            }
         }
 
         if let Some(util) = hover_util {
@@ -378,41 +379,33 @@ impl Slot {
     }
 
     fn clear(&mut self) {
+        self.tile_ids.clear();
         self.tiles.clear();
         self.tile_metas.clear();
     }
 
     fn inflate(&mut self, config: &mut Config, cx: &mut Context) {
-        self.is_inflating = true;
-        let interval = TileID(config.interval.intersection(cx.view_interval));
-        // HACK: since only one tile is ever made
-
-        if let std::collections::btree_map::Entry::Vacant(e) = self.slot_tiles.entry(interval) {
-            config
-                .data_source
-                .fetch_slot_tile(self.entry_id.clone(), interval);
-            e.insert(None);
-        } else if let Some(slot_tile) = self.slot_tiles.get(&interval).unwrap() {
-            self.tiles.push(slot_tile.clone());
-            self.is_inflating = false;
+        for tile_id in config.request_tiles(cx.view_interval) {
+            config.data_source.fetch_slot_tile(&self.entry_id, tile_id);
+            self.tile_ids.push(tile_id);
+            self.tiles.insert(tile_id, None);
         }
     }
 
-    fn fetch_meta_tile(&mut self, tile_id: TileID, config: &mut Config) -> Option<SlotMetaTile> {
-        if let std::collections::btree_map::Entry::Vacant(e) =
-            self.tile_metas.entry((self.entry_id.clone(), tile_id))
-        {
-            config
-                .data_source
-                .fetch_slot_meta_tile(self.entry_id.clone(), tile_id);
-            e.insert(None);
-            None
-        } else {
-            self.tile_metas
-                .get(&(self.entry_id.clone(), tile_id))
-                .unwrap()
-                .clone()
-        }
+    fn fetch_meta_tile(
+        &mut self,
+        tile_id: TileID,
+        config: &mut Config,
+    ) -> Option<&SlotMetaTileData> {
+        self.tile_metas
+            .entry(tile_id)
+            .or_insert_with(|| {
+                config
+                    .data_source
+                    .fetch_slot_meta_tile(&self.entry_id, tile_id);
+                None
+            })
+            .as_ref()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -428,8 +421,14 @@ impl Slot {
         cx: &mut Context,
     ) -> Option<Pos2> {
         // Hack: can't pass this as an argument because it aliases self.
-        let tile = &self.tiles[tile_index];
-        let tile_id = tile.tile_id;
+        let tile_id = self.tile_ids[tile_index];
+        let tile = self.tiles.get(&tile_id).unwrap();
+
+        if !tile.is_some() {
+            // Tile hasn't finished loading.
+            return hover_pos;
+        }
+        let tile = tile.as_ref().unwrap();
 
         if !cx.view_interval.overlaps(tile_id.0) {
             return hover_pos;
@@ -533,11 +532,10 @@ impl Entry for Slot {
                 long_name: long_name.to_owned(),
                 expanded: true,
                 max_rows: *max_rows,
-                tiles: Vec::new(),
-                slot_tiles: BTreeMap::new(),
+                tile_ids: Vec::new(),
+                tiles: BTreeMap::new(),
                 tile_metas: BTreeMap::new(),
                 last_view_interval: None,
-                is_inflating: false,
             }
         } else {
             unreachable!()
@@ -552,6 +550,15 @@ impl Entry for Slot {
     }
     fn hover_text(&self) -> &str {
         &self.long_name
+    }
+
+    fn find_slot(&mut self, entry_id: &EntryID, level: u64) -> Option<&mut Slot> {
+        assert!(entry_id.slot_index(level - 1).is_some());
+        Some(self)
+    }
+
+    fn find_summary(&mut self, _entry_id: &EntryID, _level: u64) -> Option<&mut Summary> {
+        unreachable!()
     }
 
     fn content(
@@ -575,7 +582,7 @@ impl Entry for Slot {
                 self.clear();
             }
             self.last_view_interval = Some(cx.view_interval);
-            if self.tiles.is_empty() || self.is_inflating {
+            if self.tiles.is_empty() {
                 self.inflate(config, cx);
             }
 
@@ -585,7 +592,7 @@ impl Entry for Slot {
                 .rect(rect, 0.0, visuals.bg_fill, visuals.bg_stroke);
 
             let rows = self.rows();
-            for tile_index in 0..self.tiles.len() {
+            for tile_index in 0..self.tile_ids.len() {
                 hover_pos =
                     self.render_tile(tile_index, rows, hover_pos, ui, rect, viewport, config, cx);
             }
@@ -703,6 +710,22 @@ impl<S: Entry> Entry for Panel<S> {
         &self.long_name
     }
 
+    fn find_slot(&mut self, entry_id: &EntryID, level: u64) -> Option<&mut Slot> {
+        self.slots
+            .get_mut(entry_id.slot_index(level)? as usize)?
+            .find_slot(entry_id, level + 1)
+    }
+
+    fn find_summary(&mut self, entry_id: &EntryID, level: u64) -> Option<&mut Summary> {
+        if level < entry_id.level() - 1 {
+            self.slots
+                .get_mut(entry_id.slot_index(level)? as usize)?
+                .find_summary(entry_id, level + 1)
+        } else {
+            self.summary.as_mut()?.find_summary(entry_id, level + 1)
+        }
+    }
+
     fn content(
         &mut self,
         ui: &mut egui::Ui,
@@ -772,12 +795,9 @@ impl<S: Entry> Entry for Panel<S> {
 }
 
 impl Config {
-    fn new(mut data_source: Box<dyn DeferredDataSource>) -> Self {
-        let init = data_source.get_info().unwrap();
-        let max_node = init.entry_info.nodes();
-        let interval = init.interval;
-
-        // console_log!("configinterval: {:?}", interval);
+    fn new(data_source: Box<dyn DeferredDataSource>, info: &DataSourceInfo) -> Self {
+        let max_node = info.entry_info.nodes();
+        let interval = info.interval;
 
         Self {
             min_node: 0,
@@ -786,19 +806,29 @@ impl Config {
             data_source,
         }
     }
+
+    fn request_tiles(&mut self, request_interval: Interval) -> Vec<TileID> {
+        // For now, always return a single tile
+        vec![TileID(request_interval)]
+    }
 }
 
 impl Window {
-    fn new(data_source: Box<dyn DeferredDataSource>, index: u64) -> Self {
-        let mut config = Config::new(data_source);
-        let init = config.data_source.get_info().unwrap();
+    fn new(data_source: Box<dyn DeferredDataSource>, info: &DataSourceInfo, index: u64) -> Self {
         Self {
-            panel: Panel::new(&init.entry_info, EntryID::root()),
+            panel: Panel::new(&info.entry_info, EntryID::root()),
             index,
-            kinds: init.entry_info.kinds(),
-            config,
-            tile_meta_cache: BTreeMap::new(),
+            kinds: info.entry_info.kinds(),
+            config: Config::new(data_source, info),
         }
+    }
+
+    fn find_slot(&mut self, entry_id: &EntryID) -> Option<&mut Slot> {
+        self.panel.find_slot(entry_id, 0)
+    }
+
+    fn find_summary(&mut self, entry_id: &EntryID) -> Option<&mut Summary> {
+        self.panel.find_summary(entry_id, 0)
     }
 
     fn content(&mut self, ui: &mut egui::Ui, cx: &mut Context) {
@@ -871,63 +901,13 @@ impl Window {
         ui.add_space(WIDGET_PADDING);
         self.expand_collapse(ui, cx);
     }
-    fn find_slot_entry<'a>(&'a mut self, slot_tile: &SlotTile) -> Option<&'a mut Slot> {
-        for node in &mut self.panel.slots {
-            for node2 in &mut node.slots {
-                for node3 in &mut node2.slots {
-                    if node3.entry_id == slot_tile.entry_id.clone() {
-                        return Some(node3);
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    fn find_slot_meta_entry<'a>(&'a mut self, slot_tile: &SlotMetaTile) -> Option<&'a mut Slot> {
-        for node in &mut self.panel.slots {
-            for node2 in &mut node.slots {
-                for node3 in &mut node2.slots {
-                    if node3.entry_id == slot_tile.entry_id.clone() {
-                        self.tile_meta_cache.insert(
-                            (slot_tile.entry_id.clone(), slot_tile.tile_id),
-                            Some(slot_tile.clone()),
-                        );
-                        return Some(node3);
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    fn find_summary_entry<'a>(&'a mut self, entry_id: &EntryID) -> Option<&'a mut Summary> {
-        for node in &mut self.panel.slots {
-            if node.summary.is_some() && node.summary.as_ref().unwrap().entry_id == entry_id.clone()
-            {
-                return node.summary.as_mut();
-            }
-
-            for node2 in &mut node.slots {
-                if node2.summary.is_some()
-                    && node2.summary.as_ref().unwrap().entry_id == entry_id.clone()
-                {
-                    return node2.summary.as_mut();
-                }
-            }
-        }
-
-        None
-    }
 }
 
 impl ProfApp {
     /// Called once before the first frame.
     pub fn new(
         cc: &eframe::CreationContext<'_>,
-        data_source: Box<dyn DeferredDataSource>,
+        mut data_source: Box<dyn DeferredDataSource>,
         extra_source: Option<Box<dyn DeferredDataSource>>,
     ) -> Self {
         // This is also where you can customized the look at feel of egui using
@@ -941,16 +921,17 @@ impl ProfApp {
             Default::default()
         };
 
-        let mut data_source = data_source;
-        data_source.fetch_layout();
-        if let Some(ref mut extra_source) = result.extra_source {
-            extra_source.fetch_layout();
+        result.pending_data_sources.clear();
+
+        data_source.fetch_info();
+        result.pending_data_sources.push_back(data_source);
+
+        if let Some(mut extra_source) = extra_source {
+            extra_source.fetch_info();
+            result.pending_data_sources.push_back(extra_source);
         }
 
         result.windows.clear();
-        result.extra_source = extra_source;
-        result.source = Some(data_source);
-        result.initialized = false;
 
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -1150,73 +1131,62 @@ impl eframe::App for ProfApp {
     /// Called each time the UI needs repainting.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let Self {
+            pending_data_sources,
             windows,
             cx,
             #[cfg(not(target_arch = "wasm32"))]
             last_update,
-            source,
             ..
         } = self;
 
-        // get any pending data source updates
-
-        if !self.initialized && source.is_some() {
-            let mut src = source.take().unwrap();
-            if src.get_info().is_some() {
-                windows.push(Window::new(src, 0));
-                let window: &mut Window = windows.last_mut().unwrap();
-                cx.total_interval = window.config.interval;
+        if let Some(mut source) = pending_data_sources.pop_front() {
+            if let Some(info) = source.get_info() {
+                let window = Window::new(source, &info, windows.len() as u64);
+                if windows.is_empty() {
+                    cx.total_interval = window.config.interval;
+                } else {
+                    cx.total_interval = cx.total_interval.union(window.config.interval);
+                }
                 ProfApp::zoom(cx, cx.total_interval);
-                self.initialized = true;
+                windows.push(window);
             } else {
-                source.replace(src);
+                pending_data_sources.push_front(source);
             }
         }
 
         for window in windows.iter_mut() {
-            // gather slot tiles
-            let slot_tiles = window.config.data_source.get_slot_tile();
-            for tile in slot_tiles {
-                let entry = window.find_slot_entry(&tile);
-
-                if let Some(entry) = entry {
-                    if entry.slot_tiles.contains_key(&tile.tile_id) {
-                        entry.slot_tiles.insert(tile.tile_id, Some(tile));
-                    }
+            for tile in window.config.data_source.get_slot_tiles() {
+                if let Some(entry) = window.find_slot(&tile.entry_id) {
+                    // If the entry doesn't exist, we already zoomed away and
+                    // are no longer interested in this tile.
+                    entry
+                        .tiles
+                        .entry(tile.tile_id)
+                        .and_modify(|t| *t = Some(tile.data));
                 }
             }
 
-            // gather summary tiles
-            let summary_tiles = window.config.data_source.get_summary_tiles();
-            for tile in summary_tiles {
-                let entry = window.find_summary_entry(&tile.entry_id);
-
-                if let Some(entry) = entry {
-                    if entry.sum_tiles.contains_key(&tile.tile_id) {
-                        entry.sum_tiles.insert(tile.tile_id, Some(tile));
-                    }
-                }
-            }
-
-            // gather meta tiles
-            let meta_tiles = window.config.data_source.get_slot_meta_tile();
-            for tile in meta_tiles {
-                let entry: Option<&mut Slot> = window.find_slot_meta_entry(&tile);
-
-                if let Some(entry) = entry {
-                    if entry
+            for tile in window.config.data_source.get_slot_meta_tiles() {
+                if let Some(entry) = window.find_slot(&tile.entry_id) {
+                    // If the entry doesn't exist, we already zoomed away and
+                    // are no longer interested in this tile.
+                    entry
                         .tile_metas
-                        .contains_key(&(tile.entry_id.clone(), tile.tile_id))
-                    {
-                        entry
-                            .tile_metas
-                            .insert((tile.entry_id.clone(), tile.tile_id), Some(tile));
-                    }
-                    // also add to the window meta cache
+                        .entry(tile.tile_id)
+                        .and_modify(|t| *t = Some(tile.data));
                 }
             }
 
-            // HACK: for now we dont have to gather tile IDs
+            for tile in window.config.data_source.get_summary_tiles() {
+                if let Some(entry) = window.find_summary(&tile.entry_id) {
+                    // If the entry doesn't exist, we already zoomed away and
+                    // are no longer interested in this tile.
+                    entry
+                        .tiles
+                        .entry(tile.tile_id)
+                        .and_modify(|t| *t = Some(tile.data));
+                }
+            }
         }
 
         let mut _fps = 0.0;
@@ -1256,18 +1226,6 @@ impl eframe::App for ProfApp {
                     ui.set_width(ui.available_width());
                     window.controls(ui, cx);
                 });
-            }
-
-            if self.extra_source.is_some() && ui.button("Add Another Profile").clicked() {
-                let extra = self.extra_source.take().unwrap();
-                let mut index = 0;
-                if let Some(last) = windows.last() {
-                    index = last.index + 1;
-                }
-                windows.push(Window::new(extra, index));
-                let window = windows.last_mut().unwrap();
-                cx.total_interval = cx.total_interval.union(window.config.interval);
-                ProfApp::zoom(cx, cx.total_interval);
             }
 
             if ui.button("Reset Zoom Level").clicked() {

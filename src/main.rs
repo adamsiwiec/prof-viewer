@@ -6,8 +6,8 @@ use rand::Rng;
 use std::collections::BTreeMap;
 
 use legion_prof_viewer::data::{
-    DataSource, EntryID, EntryInfo, Field, Item, ItemMeta, ItemUID, Layout, SlotMetaTile, SlotTile,
-    SummaryTile, TileID, UtilPoint,
+    DataSource, DataSourceInfo, EntryID, EntryInfo, Field, Item, ItemMeta, ItemUID, SlotMetaTile,
+    SlotMetaTileData, SlotTile, SlotTileData, SummaryTile, SummaryTileData, TileID, UtilPoint,
 };
 use legion_prof_viewer::deferred_data::DeferredDataSourceWrapper;
 use legion_prof_viewer::timestamp::{Interval, Timestamp};
@@ -112,8 +112,8 @@ impl RandomDataSource {
 
     fn generate_slot(&mut self, entry_id: &EntryID) -> &SlotCacheTile {
         if !self.slot_cache.contains_key(entry_id) {
-            let einfo = self.fetch_layout();
-            let entry = einfo.get(entry_id);
+            let einfo = self.fetch_info();
+            let entry = einfo.entry_info.get(entry_id);
 
             let max_rows = if let EntryInfo::Slot { max_rows, .. } = entry.unwrap() {
                 max_rows
@@ -170,9 +170,9 @@ impl RandomDataSource {
         self.slot_cache.get(entry_id).unwrap()
     }
 
-    fn fetch_layout(&mut self) -> EntryInfo {
+    fn fetch_entry_info(&mut self) -> &EntryInfo {
         if let Some(ref info) = self.info {
-            return info.clone();
+            return info;
         }
 
         let kinds = vec![
@@ -226,30 +226,20 @@ impl RandomDataSource {
             summary: None,
             slots: node_slots,
         });
-        self.info.as_ref().unwrap().clone()
+        self.info.as_ref().unwrap()
     }
 }
 
 impl DataSource for RandomDataSource {
-    fn fetch_layout(&mut self) -> Layout {
-        Layout {
-            entry_info: self.fetch_layout(),
+    fn fetch_info(&mut self) -> DataSourceInfo {
+        DataSourceInfo {
+            entry_info: self.fetch_entry_info().clone(),
             interval: self.interval(),
         }
     }
 
-    fn request_tiles(&mut self, _entry_id: &EntryID, request_interval: Interval) -> Vec<TileID> {
-        let duration = request_interval.duration_ns();
-
-        const TILES: i64 = 3;
-
-        let mut tiles = Vec::new();
-        for i in 0..TILES {
-            let start = Timestamp(i * duration / TILES + request_interval.start.0);
-            let stop = Timestamp((i + 1) * duration / TILES + request_interval.start.0);
-            tiles.push(TileID(Interval::new(start, stop)));
-        }
-        tiles
+    fn fetch_tile_sets(&mut self) -> Vec<Vec<TileID>> {
+        Vec::new()
     }
 
     fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID) -> SummaryTile {
@@ -292,7 +282,9 @@ impl DataSource for RandomDataSource {
         SummaryTile {
             entry_id: entry_id.clone(),
             tile_id,
-            utilization: tile_utilization,
+            data: SummaryTileData {
+                utilization: tile_utilization,
+            },
         }
     }
 
@@ -317,7 +309,7 @@ impl DataSource for RandomDataSource {
         SlotTile {
             entry_id: entry_id.clone(),
             tile_id,
-            items: slot_items,
+            data: SlotTileData { items: slot_items },
         }
     }
 
@@ -340,7 +332,7 @@ impl DataSource for RandomDataSource {
         SlotMetaTile {
             entry_id: entry_id.clone(),
             tile_id,
-            items: slot_items,
+            data: SlotMetaTileData { items: slot_items },
         }
     }
 }

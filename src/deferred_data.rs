@@ -1,24 +1,22 @@
-use std::collections::BTreeMap;
-
-use crate::data::{DataSource, EntryID, Layout, SlotMetaTile, SlotTile, SummaryTile, TileID};
-use crate::timestamp::Interval;
+use crate::data::{
+    DataSource, DataSourceInfo, EntryID, SlotMetaTile, SlotTile, SummaryTile, TileID,
+};
 
 pub trait DeferredDataSource {
-    fn fetch_layout(&mut self);
-    fn get_info(&mut self) -> Option<Layout>;
-    fn fetch_tiles(&mut self, entry_id: EntryID, request_interval: Interval);
-    fn get_tiles(&mut self, entry_id: EntryID) -> Vec<TileID>;
-    fn fetch_summary_tile(&mut self, entry_id: EntryID, tile_id: TileID);
+    fn fetch_info(&mut self);
+    fn get_info(&mut self) -> Option<DataSourceInfo>;
+    fn fetch_tile_sets(&mut self);
+    fn get_tile_sets(&mut self) -> Option<Vec<Vec<TileID>>>;
+    fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID);
     fn get_summary_tiles(&mut self) -> Vec<SummaryTile>;
-    fn fetch_slot_tile(&mut self, entry_id: EntryID, tile_id: TileID);
-    fn get_slot_tile(&mut self) -> Vec<SlotTile>;
-    fn fetch_slot_meta_tile(&mut self, entry_id: EntryID, tile_id: TileID);
-    fn get_slot_meta_tile(&mut self) -> Vec<SlotMetaTile>;
+    fn fetch_slot_tile(&mut self, entry_id: &EntryID, tile_id: TileID);
+    fn get_slot_tiles(&mut self) -> Vec<SlotTile>;
+    fn fetch_slot_meta_tile(&mut self, entry_id: &EntryID, tile_id: TileID);
+    fn get_slot_meta_tiles(&mut self) -> Vec<SlotMetaTile>;
 }
 
 pub struct DeferredDataSourceWrapper {
     data_source: Box<dyn DataSource>,
-    tiles: BTreeMap<EntryID, Vec<TileID>>,
     summary_tiles: Vec<SummaryTile>,
     slot_tiles: Vec<SlotTile>,
     slot_meta_tiles: Vec<SlotMetaTile>,
@@ -31,70 +29,47 @@ impl DeferredDataSourceWrapper {
             summary_tiles: Vec::new(),
             slot_tiles: Vec::new(),
             slot_meta_tiles: Vec::new(),
-            tiles: BTreeMap::new(),
         }
     }
 }
 
 impl DeferredDataSource for DeferredDataSourceWrapper {
-    fn fetch_layout(&mut self) {}
+    fn fetch_info(&mut self) {}
 
-    fn get_info(&mut self) -> Option<Layout> {
-        Some(self.data_source.fetch_layout())
+    fn get_info(&mut self) -> Option<DataSourceInfo> {
+        Some(self.data_source.fetch_info())
     }
 
-    fn fetch_tiles(&mut self, entry_id: EntryID, request_interval: Interval) {
-        let tiles = self.data_source.request_tiles(&entry_id, request_interval);
+    fn fetch_tile_sets(&mut self) {}
 
-        let value: Vec<TileID> = self
-            .tiles
-            .entry(entry_id.clone())
-            .or_insert(tiles.clone())
-            .clone();
-
-        self.tiles
-            .entry(entry_id)
-            .or_insert(tiles.clone())
-            .extend(tiles.into_iter().filter(|&x| !value.contains(&x)));
+    fn get_tile_sets(&mut self) -> Option<Vec<Vec<TileID>>> {
+        Some(self.data_source.fetch_tile_sets())
     }
 
-    fn get_tiles(&mut self, entry_id: EntryID) -> Vec<TileID> {
-        self.tiles.get(&entry_id).unwrap().clone()
-    }
-
-    fn fetch_summary_tile(&mut self, entry_id: EntryID, tile_id: TileID) {
-        let sum_tile = self.data_source.fetch_summary_tile(&entry_id, tile_id);
-
-        self.summary_tiles.push(sum_tile);
+    fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID) {
+        self.summary_tiles
+            .push(self.data_source.fetch_summary_tile(entry_id, tile_id));
     }
 
     fn get_summary_tiles(&mut self) -> Vec<SummaryTile> {
-        let ret = self.summary_tiles.clone();
-        self.summary_tiles.clear();
-        ret
-    }
-    fn fetch_slot_tile(&mut self, entry_id: EntryID, tile_id: TileID) {
-        let slot_tile = self.data_source.fetch_slot_tile(&entry_id, tile_id);
-
-        self.slot_tiles.push(slot_tile);
+        std::mem::take(&mut self.summary_tiles)
     }
 
-    fn get_slot_tile(&mut self) -> Vec<SlotTile> {
-        let ret = self.slot_tiles.clone();
-
-        self.slot_tiles.clear();
-        ret
+    fn fetch_slot_tile(&mut self, entry_id: &EntryID, tile_id: TileID) {
+        self.slot_tiles
+            .push(self.data_source.fetch_slot_tile(entry_id, tile_id));
     }
 
-    fn fetch_slot_meta_tile(&mut self, entry_id: EntryID, tile_id: TileID) {
-        let slot_meta_tile = self.data_source.fetch_slot_meta_tile(&entry_id, tile_id);
-
-        self.slot_meta_tiles.push(slot_meta_tile);
+    fn get_slot_tiles(&mut self) -> Vec<SlotTile> {
+        std::mem::take(&mut self.slot_tiles)
     }
 
-    fn get_slot_meta_tile(&mut self) -> Vec<SlotMetaTile> {
-        let ret = self.slot_meta_tiles.clone();
-        self.slot_meta_tiles.clear();
-        ret
+    fn fetch_slot_meta_tile(&mut self, entry_id: &EntryID, tile_id: TileID) {
+        self.slot_meta_tiles
+            .push(self.data_source.fetch_slot_meta_tile(entry_id, tile_id));
+    }
+
+    fn get_slot_meta_tiles(&mut self) -> Vec<SlotMetaTile> {
+        std::mem::take(&mut self.slot_meta_tiles)
     }
 }
