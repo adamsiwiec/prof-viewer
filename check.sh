@@ -6,11 +6,9 @@ cargo check --workspace --no-default-features --all-targets
 cargo check --workspace --no-default-features --features client --all-targets
 cargo check --workspace --no-default-features --features server --all-targets
 cargo check --workspace --all-features --all-targets
-cargo check --workspace --all-targets
 
 cargo check --workspace --no-default-features --lib --target wasm32-unknown-unknown
 cargo check --workspace --no-default-features --features client --lib --target wasm32-unknown-unknown
-cargo check --workspace --lib --target wasm32-unknown-unknown
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --  -D warnings -W clippy::all

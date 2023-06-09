@@ -35,10 +35,6 @@ jobs:
         with:
           command: check
           args: --all-features
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
-          # default features
 
   check_wasm:
     name: Check wasm32
@@ -59,11 +55,6 @@ jobs:
         with:
           command: check
           args: --no-default-features --features client --lib --target wasm32-unknown-unknown
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --lib --target wasm32-unknown-unknown
-          # default features
 
   test:
     name: Test Suite

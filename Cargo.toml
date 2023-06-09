@@ -6,7 +6,7 @@ edition = "2021"
 rust-version = "1.67"
 
 [features]
-default = ["client"]
+default = []
 client = ["dep:serde_json", "dep:reqwest", "dep:url"]
 server = ["dep:actix-cors", "dep:actix-web", "dep:env_logger", "dep:serde_json"]
 
