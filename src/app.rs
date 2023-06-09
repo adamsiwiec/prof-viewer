@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use egui::{
-    Align2, Color32, NumExt, Pos2, Rect, RichText, ScrollArea, Slider, Stroke, TextStyle, Vec2,
+    Color32, NumExt, Pos2, Rect, RichText, ScrollArea, Slider, Stroke, TextStyle, Vec2,
 };
 use serde::{Deserialize, Serialize};
 
@@ -45,10 +45,8 @@ use crate::timestamp::{Interval, IntervalParseError};
 ///   * One Slot for each processor, channel, memory
 ///   * Viewer widget for items
 
-
 const MAX_SELECTED_ITEMS: u64 = 1000;
 const MAX_SEARCHED_ITEMS: u64 = 100000;
-
 
 struct Summary {
     entry_id: EntryID,
@@ -212,17 +210,17 @@ trait Entry {
             *style.noninteractive()
         };
 
-         // prevent text overflow
-         ui.painter()
-         .rect(rect, 0.0, visuals.bg_fill, visuals.bg_stroke);
-     let lay = ui.painter().layout(
-         self.label_text().to_string(),
-         font_id,
-         visuals.text_color(),
-         rect.width() - style.spacing.item_spacing.x * 2.0,
-     );
-     ui.painter()
-         .galley(rect.min + style.spacing.item_spacing, lay);
+        // prevent text overflow
+        ui.painter()
+            .rect(rect, 0.0, visuals.bg_fill, visuals.bg_stroke);
+        let lay = ui.painter().layout(
+            self.label_text().to_string(),
+            font_id,
+            visuals.text_color(),
+            rect.width() - style.spacing.item_spacing.x * 2.0,
+        );
+        ui.painter()
+            .galley(rect.min + style.spacing.item_spacing, lay);
 
         if response.clicked() {
             // This will take effect next frame because we can't redraw this widget now
@@ -1255,15 +1253,15 @@ impl ProfApp {
         }
         let action = ctx.input(|i| {
             // if i.modifiers.ctrl {
-                if i.key_pressed(egui::Key::ArrowLeft) {
-                    Actions::UndoZoom
-                } else if i.key_pressed(egui::Key::ArrowRight) {
-                    Actions::RedoZoom
-                } else if i.key_pressed(egui::Key::Num0) {
-                    Actions::ResetZoom
-                } else {
-                    Actions::NoAction
-                }
+            if i.key_pressed(egui::Key::ArrowLeft) {
+                Actions::UndoZoom
+            } else if i.key_pressed(egui::Key::ArrowRight) {
+                Actions::RedoZoom
+            } else if i.key_pressed(egui::Key::Num0) {
+                Actions::ResetZoom
+            } else {
+                Actions::NoAction
+            }
             // } else {
             //     Actions::NoAction
             // }
