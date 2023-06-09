@@ -1,10 +1,10 @@
 use reqwest::blocking::RequestBuilder;
 
-use crate::http::fetch::ProfResponse;
+use crate::http::fetch::DataSourceResponse;
 
 pub fn fetch(
     request: RequestBuilder,
-    on_done: Box<dyn FnOnce(Result<ProfResponse, String>) + Send>,
+    on_done: Box<dyn FnOnce(Result<DataSourceResponse, String>) + Send>,
 ) {
     std::thread::Builder::new()
         .name("ehttp".to_owned())
@@ -15,7 +15,7 @@ pub fn fetch(
                 .text()
                 .expect("unable to get text");
 
-            on_done(Ok(ProfResponse { body: text }))
+            on_done(Ok(DataSourceResponse { body: text }))
         })
         .expect("unable to spawn thread");
 }

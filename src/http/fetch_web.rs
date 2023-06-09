@@ -1,6 +1,7 @@
 use reqwest::RequestBuilder;
 
-use crate::http::fetch::ProfResponse;
+use crate::http::fetch::DataSourceResponse;
+
 /// Spawn an async task.
 ///
 /// A wrapper around `wasm_bindgen_futures::spawn_local`.
@@ -14,18 +15,18 @@ where
 
 pub fn fetch(
     request: RequestBuilder,
-    on_done: Box<dyn FnOnce(Result<ProfResponse, String>) + Send>,
+    on_done: Box<dyn FnOnce(Result<DataSourceResponse, String>) + Send>,
 ) {
     spawn_future(async move {
         let text = request
             .send()
             .await
-            .expect("test")
+            .expect("send failed")
             .text()
             .await
             .expect("unable to get text");
 
-        let res = Ok(ProfResponse { body: text });
+        let res = Ok(DataSourceResponse { body: text });
 
         on_done(res)
     });

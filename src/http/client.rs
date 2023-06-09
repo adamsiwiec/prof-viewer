@@ -1,17 +1,17 @@
 use std::sync::{Arc, Mutex};
 
-use serde::Deserialize;
-
 #[cfg(not(target_arch = "wasm32"))]
 use reqwest::blocking::{Client, ClientBuilder};
 #[cfg(target_arch = "wasm32")]
 use reqwest::{Client, ClientBuilder};
 
+use serde::Deserialize;
+
 use url::Url;
 
 use crate::data::{DataSourceInfo, EntryID, SlotMetaTile, SlotTile, SummaryTile, TileID, TileSet};
 use crate::deferred_data::DeferredDataSource;
-use crate::http::fetch::{fetch, ProfResponse};
+use crate::http::fetch::{fetch, DataSourceResponse};
 use crate::http::schema::TileRequest;
 
 pub struct HTTPClientDataSource {
@@ -36,9 +36,7 @@ impl HTTPClientDataSource {
             slot_meta_tiles: Arc::new(Mutex::new(Vec::new())),
         }
     }
-}
 
-impl HTTPClientDataSource {
     fn request<T>(&mut self, url: Url, body: String, container: Arc<Mutex<Vec<T>>>)
     where
         T: 'static + Sync + Send + for<'a> Deserialize<'a>,
@@ -49,10 +47,13 @@ impl HTTPClientDataSource {
             .header("Accept", "*/*")
             .header("Content-Type", "javascript/json;")
             .body(body);
-        fetch(request, move |response: Result<ProfResponse, String>| {
-            let result = serde_json::from_str::<T>(&response.unwrap().body).unwrap();
-            container.lock().unwrap().push(result);
-        });
+        fetch(
+            request,
+            move |response: Result<DataSourceResponse, String>| {
+                let result = serde_json::from_str::<T>(&response.unwrap().body).unwrap();
+                container.lock().unwrap().push(result);
+            },
+        );
     }
 }
 
