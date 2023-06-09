@@ -16,20 +16,20 @@ pub struct AppState {
 }
 
 pub struct DataSourceHTTPServer {
-    pub port: u16,
     pub host: String,
+    pub port: u16,
     pub state: AppState,
 }
 
 impl DataSourceHTTPServer {
     pub fn new(
-        port: u16,
         host: String,
+        port: u16,
         state: Box<dyn DataSource + Sync + Send + 'static>,
     ) -> Self {
         Self {
-            port,
             host,
+            port,
             state: AppState {
                 data_source: Mutex::new(state),
             },
