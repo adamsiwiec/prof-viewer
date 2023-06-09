@@ -1140,7 +1140,9 @@ impl eframe::App for ProfApp {
         } = self;
 
         if let Some(mut source) = pending_data_sources.pop_front() {
-            if let Some(info) = source.get_info() {
+            // We made one request, so we know there is always zero or one
+            // elements in this list.
+            if let Some(info) = source.get_info().pop() {
                 let window = Window::new(source, &info, windows.len() as u64);
                 if windows.is_empty() {
                     cx.total_interval = window.config.interval;

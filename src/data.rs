@@ -76,6 +76,11 @@ pub struct ItemMeta {
 pub struct TileID(pub Interval);
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TileSet {
+    pub tiles: Vec<Vec<TileID>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SummaryTileData {
     pub utilization: Vec<UtilPoint>,
 }
@@ -113,7 +118,7 @@ pub struct SlotMetaTile {
 
 pub trait DataSource {
     fn fetch_info(&mut self) -> DataSourceInfo;
-    fn fetch_tile_sets(&mut self) -> Vec<Vec<TileID>>;
+    fn fetch_tile_set(&mut self) -> TileSet;
     fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID) -> SummaryTile;
     fn fetch_slot_tile(&mut self, entry_id: &EntryID, tile_id: TileID) -> SlotTile;
     fn fetch_slot_meta_tile(&mut self, entry_id: &EntryID, tile_id: TileID) -> SlotMetaTile;

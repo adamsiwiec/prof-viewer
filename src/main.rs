@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 
 use legion_prof_viewer::data::{
     DataSource, DataSourceInfo, EntryID, EntryInfo, Field, Item, ItemMeta, ItemUID, SlotMetaTile,
-    SlotMetaTileData, SlotTile, SlotTileData, SummaryTile, SummaryTileData, TileID, UtilPoint,
+    SlotMetaTileData, SlotTile, SlotTileData, SummaryTile, SummaryTileData, TileID, TileSet,
+    UtilPoint,
 };
 use legion_prof_viewer::deferred_data::DeferredDataSourceWrapper;
 use legion_prof_viewer::timestamp::{Interval, Timestamp};
@@ -238,8 +239,8 @@ impl DataSource for RandomDataSource {
         }
     }
 
-    fn fetch_tile_sets(&mut self) -> Vec<Vec<TileID>> {
-        Vec::new()
+    fn fetch_tile_set(&mut self) -> TileSet {
+        TileSet { tiles: Vec::new() }
     }
 
     fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID) -> SummaryTile {

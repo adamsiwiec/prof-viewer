@@ -1,12 +1,12 @@
 use crate::data::{
-    DataSource, DataSourceInfo, EntryID, SlotMetaTile, SlotTile, SummaryTile, TileID,
+    DataSource, DataSourceInfo, EntryID, SlotMetaTile, SlotTile, SummaryTile, TileID, TileSet,
 };
 
 pub trait DeferredDataSource {
     fn fetch_info(&mut self);
-    fn get_info(&mut self) -> Option<DataSourceInfo>;
-    fn fetch_tile_sets(&mut self);
-    fn get_tile_sets(&mut self) -> Option<Vec<Vec<TileID>>>;
+    fn get_info(&mut self) -> Vec<DataSourceInfo>;
+    fn fetch_tile_set(&mut self);
+    fn get_tile_sets(&mut self) -> Vec<TileSet>;
     fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID);
     fn get_summary_tiles(&mut self) -> Vec<SummaryTile>;
     fn fetch_slot_tile(&mut self, entry_id: &EntryID, tile_id: TileID);
@@ -17,6 +17,8 @@ pub trait DeferredDataSource {
 
 pub struct DeferredDataSourceWrapper {
     data_source: Box<dyn DataSource>,
+    infos: Vec<DataSourceInfo>,
+    tile_sets: Vec<TileSet>,
     summary_tiles: Vec<SummaryTile>,
     slot_tiles: Vec<SlotTile>,
     slot_meta_tiles: Vec<SlotMetaTile>,
@@ -26,6 +28,8 @@ impl DeferredDataSourceWrapper {
     pub fn new(data_source: Box<dyn DataSource>) -> Self {
         Self {
             data_source,
+            infos: Vec::new(),
+            tile_sets: Vec::new(),
             summary_tiles: Vec::new(),
             slot_tiles: Vec::new(),
             slot_meta_tiles: Vec::new(),
@@ -34,16 +38,20 @@ impl DeferredDataSourceWrapper {
 }
 
 impl DeferredDataSource for DeferredDataSourceWrapper {
-    fn fetch_info(&mut self) {}
-
-    fn get_info(&mut self) -> Option<DataSourceInfo> {
-        Some(self.data_source.fetch_info())
+    fn fetch_info(&mut self) {
+        self.infos.push(self.data_source.fetch_info());
     }
 
-    fn fetch_tile_sets(&mut self) {}
+    fn get_info(&mut self) -> Vec<DataSourceInfo> {
+        std::mem::take(&mut self.infos)
+    }
 
-    fn get_tile_sets(&mut self) -> Option<Vec<Vec<TileID>>> {
-        Some(self.data_source.fetch_tile_sets())
+    fn fetch_tile_set(&mut self) {
+        self.tile_sets.push(self.data_source.fetch_tile_set());
+    }
+
+    fn get_tile_sets(&mut self) -> Vec<TileSet> {
+        std::mem::take(&mut self.tile_sets)
     }
 
     fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID) {
