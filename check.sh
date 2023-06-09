@@ -11,7 +11,7 @@ cargo check --workspace --no-default-features --lib --target wasm32-unknown-unkn
 cargo check --workspace --no-default-features --features client --lib --target wasm32-unknown-unknown
 
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features --  -D warnings -W clippy::all
+cargo clippy --workspace --all-targets --all-features --  -D warnings
 cargo test --workspace --all-targets --all-features
 cargo test --workspace --doc
 trunk build
