@@ -1,19 +1,16 @@
-use crate::data::{DataSource, EntryInfo};
+use crate::data::DataSource;
 
 use actix_cors::Cors;
 use actix_web::{
     http, middleware,
     web::{self, Data},
-    App, HttpResponse, HttpServer, Responder, Result,
+    App, HttpServer, Responder, Result,
 };
 
 use std::sync::{Arc, Mutex};
 
-use super::schema::{FetchRequest, FetchTilesRequest};
+use super::schema::FetchRequest;
 
-// dyn DataSource + Sync + Send + 'static> from
-// https://stackoverflow.com/questions/65645622/how-do-i-pass-a-trait-as-application-data-to-actix-web
-// to enable passing a datasource between threads
 pub struct AppState {
     pub data_source: Mutex<Box<dyn DataSource + Sync + Send + 'static>>,
 }
@@ -38,68 +35,20 @@ impl DataSourceHTTPServer {
             },
         }
     }
-    async fn get_entry_name(data: web::Data<AppState>) -> impl Responder {
-        let mutex = &data.data_source;
-        let mut source = mutex.lock().unwrap();
-        let e = match source.fetch_layout().entry_info {
-            EntryInfo::Panel { short_name, .. } => short_name.clone(),
-            _ => "hello".to_string(),
-        };
-
-        HttpResponse::Ok().body(e)
-    }
 
     async fn fetch_info(data: web::Data<AppState>) -> Result<impl Responder> {
         let mutex = &data.data_source;
         let mut source = mutex.lock().unwrap();
-        let to_ret = source.fetch_layout().clone();
-        Ok(web::Json(to_ret))
+        let result = source.fetch_info();
+        Ok(web::Json(result))
     }
 
-    async fn interval(data: web::Data<AppState>) -> Result<impl Responder> {
-        let mutex = &data.data_source;
-        let mut source = mutex.lock().unwrap();
-        let to_ret = source.fetch_layout().interval;
-        Ok(web::Json(to_ret))
-    }
-
-    async fn fetch_tiles(
-        info: web::Json<FetchTilesRequest>,
-        data: web::Data<AppState>,
-    ) -> Result<impl Responder> {
+    async fn fetch_tiles(data: web::Data<AppState>) -> Result<impl Responder> {
         let mutex = &data.data_source;
         let mut source = mutex.lock().unwrap();
 
-        let entry_id = &info.entry_id;
-        let request_interval = info.interval;
-        let to_ret = source.request_tiles(entry_id, request_interval);
-        Ok(web::Json(to_ret))
-    }
-
-    async fn fetch_slot_meta_tile(
-        info: web::Json<FetchRequest>,
-        data: web::Data<AppState>,
-    ) -> Result<impl Responder> {
-        let mutex = &data.data_source;
-        let mut source = mutex.lock().unwrap();
-
-        let entry_id = &info.entry_id;
-        let tile_id = info.tile_id;
-        let to_ret = source.fetch_slot_meta_tile(entry_id, tile_id);
-        Ok(web::Json(to_ret))
-    }
-
-    async fn fetch_slot_tile(
-        info: web::Json<FetchRequest>,
-        data: web::Data<AppState>,
-    ) -> Result<impl Responder> {
-        let mutex = &data.data_source;
-        let mut source = mutex.lock().unwrap();
-
-        let entry_id = &info.entry_id;
-        let tile_id = info.tile_id;
-        let to_ret = source.fetch_slot_tile(entry_id, tile_id);
-        Ok(web::Json(to_ret))
+        let result = source.fetch_tile_sets();
+        Ok(web::Json(result))
     }
 
     async fn fetch_summary_tile(
@@ -109,15 +58,36 @@ impl DataSourceHTTPServer {
         let mutex = &data.data_source;
         let mut source = mutex.lock().unwrap();
 
-        let entry_id = &info.entry_id;
-        let tile_id = info.tile_id;
-        let to_ret = source.fetch_summary_tile(entry_id, tile_id);
-        Ok(web::Json(to_ret))
+        let result = source.fetch_summary_tile(&info.entry_id, info.tile_id);
+        Ok(web::Json(result))
+    }
+
+    async fn fetch_slot_tile(
+        info: web::Json<FetchRequest>,
+        data: web::Data<AppState>,
+    ) -> Result<impl Responder> {
+        let mutex = &data.data_source;
+        let mut source = mutex.lock().unwrap();
+
+        let result = source.fetch_slot_tile(&info.entry_id, info.tile_id);
+        Ok(web::Json(result))
+    }
+
+    async fn fetch_slot_meta_tile(
+        info: web::Json<FetchRequest>,
+        data: web::Data<AppState>,
+    ) -> Result<impl Responder> {
+        let mutex = &data.data_source;
+        let mut source = mutex.lock().unwrap();
+
+        let result = source.fetch_slot_meta_tile(&info.entry_id, info.tile_id);
+        Ok(web::Json(result))
     }
 
     #[actix_web::main]
     pub async fn create_server(self) -> std::io::Result<()> {
         let state = Data::from(Arc::new(self.state));
+        // FIXME (Elliott): pick a different default logging level?
         std::env::set_var("RUST_LOG", "debug");
         env_logger::init();
         HttpServer::new(move || {
@@ -133,16 +103,14 @@ impl DataSourceHTTPServer {
                 .wrap(middleware::Compress::default())
                 .wrap(cors)
                 .app_data(state.clone())
-                .route("/entry", web::post().to(Self::get_entry_name))
                 .route("/info", web::post().to(Self::fetch_info))
-                .route("/interval", web::post().to(Self::interval))
                 .route("/tiles", web::post().to(Self::fetch_tiles))
+                .route("/summary_tile", web::post().to(Self::fetch_summary_tile))
+                .route("/slot_tile", web::post().to(Self::fetch_slot_tile))
                 .route(
                     "/slot_meta_tile",
                     web::post().to(Self::fetch_slot_meta_tile),
                 )
-                .route("/slot_tile", web::post().to(Self::fetch_slot_tile))
-                .route("/summary_tile", web::post().to(Self::fetch_summary_tile))
         })
         .bind((self.host.as_str(), self.port))?
         .run()
