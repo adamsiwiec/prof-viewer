@@ -239,7 +239,7 @@ impl DataSource for RandomDataSource {
     }
 
     fn fetch_tile_set(&mut self) -> TileSet {
-        TileSet { tiles: Vec::new() }
+        TileSet::default()
     }
 
     fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID) -> SummaryTile {

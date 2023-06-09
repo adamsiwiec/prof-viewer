@@ -75,7 +75,7 @@ pub struct ItemMeta {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct TileID(pub Interval);
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct TileSet {
     pub tiles: Vec<Vec<TileID>>,
 }
