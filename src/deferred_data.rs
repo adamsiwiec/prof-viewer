@@ -4,7 +4,7 @@ use crate::data::{
 
 pub trait DeferredDataSource {
     fn fetch_info(&mut self);
-    fn get_info(&mut self) -> Vec<DataSourceInfo>;
+    fn get_infos(&mut self) -> Vec<DataSourceInfo>;
     fn fetch_tile_set(&mut self);
     fn get_tile_sets(&mut self) -> Vec<TileSet>;
     fn fetch_summary_tile(&mut self, entry_id: &EntryID, tile_id: TileID);
@@ -42,7 +42,7 @@ impl DeferredDataSource for DeferredDataSourceWrapper {
         self.infos.push(self.data_source.fetch_info());
     }
 
-    fn get_info(&mut self) -> Vec<DataSourceInfo> {
+    fn get_infos(&mut self) -> Vec<DataSourceInfo> {
         std::mem::take(&mut self.infos)
     }
 
