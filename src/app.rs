@@ -245,6 +245,7 @@ impl Entry for Summary {
     }
 
     fn find_summary(&mut self, entry_id: &EntryID, level: u64) -> Option<&mut Summary> {
+        assert_eq!(entry_id.level(), level);
         assert_eq!(entry_id.index(level - 1)?, EntryIndex::Summary);
         Some(self)
     }
@@ -553,6 +554,7 @@ impl Entry for Slot {
     }
 
     fn find_slot(&mut self, entry_id: &EntryID, level: u64) -> Option<&mut Slot> {
+        assert_eq!(entry_id.level(), level);
         assert!(entry_id.slot_index(level - 1).is_some());
         Some(self)
     }
@@ -1157,6 +1159,17 @@ impl eframe::App for ProfApp {
         }
 
         for window in windows.iter_mut() {
+            for tile in window.config.data_source.get_summary_tiles() {
+                if let Some(entry) = window.find_summary(&tile.entry_id) {
+                    // If the entry doesn't exist, we already zoomed away and
+                    // are no longer interested in this tile.
+                    entry
+                        .tiles
+                        .entry(tile.tile_id)
+                        .and_modify(|t| *t = Some(tile.data));
+                }
+            }
+
             for tile in window.config.data_source.get_slot_tiles() {
                 if let Some(entry) = window.find_slot(&tile.entry_id) {
                     // If the entry doesn't exist, we already zoomed away and
@@ -1174,17 +1187,6 @@ impl eframe::App for ProfApp {
                     // are no longer interested in this tile.
                     entry
                         .tile_metas
-                        .entry(tile.tile_id)
-                        .and_modify(|t| *t = Some(tile.data));
-                }
-            }
-
-            for tile in window.config.data_source.get_summary_tiles() {
-                if let Some(entry) = window.find_summary(&tile.entry_id) {
-                    // If the entry doesn't exist, we already zoomed away and
-                    // are no longer interested in this tile.
-                    entry
-                        .tiles
                         .entry(tile.tile_id)
                         .and_modify(|t| *t = Some(tile.data));
                 }
