@@ -223,6 +223,32 @@ mod tests {
     }
 
     #[test]
+    fn test_s_spaces() {
+        assert_eq!(
+            Timestamp::parse("  123.4  s  "),
+            Ok(Timestamp(123_400_000_000))
+        );
+    }
+
+    #[test]
+    fn test_ms_spaces() {
+        assert_eq!(
+            Timestamp::parse("  234.5  ms  "),
+            Ok(Timestamp(234_500_000))
+        );
+    }
+
+    #[test]
+    fn test_us_spaces() {
+        assert_eq!(Timestamp::parse("  345.6  us  "), Ok(Timestamp(345_600)));
+    }
+
+    #[test]
+    fn test_ns_spaces() {
+        assert_eq!(Timestamp::parse("  567.0  ns  "), Ok(Timestamp(567)));
+    }
+
+    #[test]
     fn test_no_unit() {
         assert_eq!(Timestamp::parse("500.0"), Err(TimestampParseError::NoUnit));
     }
