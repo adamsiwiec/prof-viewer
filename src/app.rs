@@ -1027,7 +1027,6 @@ impl Window {
         self.expand_collapse(ui, cx);
         ui.add_space(WIDGET_PADDING);
         self.select_interval(ui, cx);
-        ui.add_space(WIDGET_PADDING);
         if ui.button("Reset Zoom Level").clicked() {
             ProfApp::zoom(cx, cx.total_interval);
         }
