@@ -4,6 +4,38 @@ use std::fmt;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default, Deserialize, Serialize)]
 pub struct Timestamp(pub i64 /* ns */);
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TimestampParseError {
+    InvalidValue,
+    NoUnit,
+    InvalidUnit,
+}
+
+impl Timestamp {
+    pub fn parse(s: &str) -> Result<Timestamp, TimestampParseError> {
+        let s = s.trim();
+        let split_idx = s
+            .find(|c| !(char::is_ascii_digit(&c) || c == '.'))
+            .ok_or(TimestampParseError::NoUnit)?;
+
+        let (value_s, unit_s) = s.split_at(split_idx);
+        let value = value_s
+            .parse::<f64>()
+            .map_err(|_| TimestampParseError::InvalidValue)?;
+        let unit = unit_s.trim().to_lowercase();
+
+        let factor = match unit.as_str() {
+            "ns" => 1,
+            "us" => 1_000,
+            "ms" => 1_000_000,
+            "s" => 1_000_000_000,
+            _ => return Err(TimestampParseError::InvalidUnit),
+        };
+
+        Ok(Timestamp((value * factor as f64) as i64))
+    }
+}
+
 impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Time is stored in nanoseconds. But display in larger units if possible.
@@ -39,31 +71,6 @@ impl fmt::Display for Timestamp {
 pub struct Interval {
     pub start: Timestamp,
     pub stop: Timestamp, // exclusive
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Copy)]
-pub enum IntervalParseError {
-    NoValue,
-    InvalidValue,
-    NoUnit,
-    InvalidUnit,
-    StartAfterStop,
-    StartAfterEnd,
-    StopBeforeStart,
-}
-
-impl fmt::Display for IntervalParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IntervalParseError::NoValue => write!(f, "no value"),
-            IntervalParseError::InvalidValue => write!(f, "invalid value"),
-            IntervalParseError::NoUnit => write!(f, "no unit"),
-            IntervalParseError::InvalidUnit => write!(f, "invalid unit"),
-            IntervalParseError::StartAfterStop => write!(f, "start after stop"),
-            IntervalParseError::StartAfterEnd => write!(f, "start after end"),
-            IntervalParseError::StopBeforeStart => write!(f, "stop before start"),
-        }
-    }
 }
 
 impl fmt::Display for Interval {
@@ -149,131 +156,122 @@ impl Interval {
     pub fn lerp(self, value: f32) -> Timestamp {
         Timestamp((value * (self.duration_ns() as f32)).round() as i64 + self.start.0)
     }
-
-    // convert a string like "500.0 s" to a timestamp
-    pub fn parse_timestamp(s: &str) -> Result<Timestamp, IntervalParseError> {
-        let mut parts = s.split_whitespace();
-        let prefix: &str = parts.next().ok_or(IntervalParseError::NoValue)?;
-        let mut unit = prefix.trim_start_matches(|c: char| c.is_numeric() || c == '.');
-        let value: &str = prefix.trim_end_matches(|c: char| c.is_alphabetic());
-        if value.is_empty() {
-            return Err(IntervalParseError::NoValue);
-        }
-        let value = value
-            .parse::<f64>()
-            .map_err(|_| IntervalParseError::InvalidValue)?;
-        if unit.is_empty() {
-            unit = parts.next().ok_or(IntervalParseError::NoUnit)?;
-        }
-
-        if parts.next().is_some() {
-            return Err(IntervalParseError::InvalidValue);
-        }
-        let unit = unit.to_lowercase();
-        let ns_per_us = 1_000;
-        let ns_per_ms = 1_000_000;
-        let ns_per_s = 1_000_000_000;
-        let ns = match unit.as_str() {
-            "ns" => value as i64,
-            "us" => (value * ns_per_us as f64) as i64,
-            "ms" => (value * ns_per_ms as f64) as i64,
-            "s" => (value * ns_per_s as f64) as i64,
-            _ => return Err(IntervalParseError::InvalidUnit),
-        };
-        Ok(Timestamp(ns))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // test all the different ways to parse a timestamp
+    #[test]
+    fn test_s() {
+        assert_eq!(Timestamp::parse("123.4 s"), Ok(Timestamp(123_400_000_000)));
+    }
+
     #[test]
     fn test_ms() {
-        assert_eq!(
-            Interval::parse_timestamp("500.0 ms").unwrap(),
-            Timestamp(500_000_000)
-        );
+        assert_eq!(Timestamp::parse("234.5 ms"), Ok(Timestamp(234_500_000)));
     }
 
     #[test]
     fn test_us() {
-        assert_eq!(
-            Interval::parse_timestamp("500.0 us").unwrap(),
-            Timestamp(500_000)
-        );
+        assert_eq!(Timestamp::parse("345.6 us"), Ok(Timestamp(345_600)));
     }
 
     #[test]
     fn test_ns() {
-        assert_eq!(
-            Interval::parse_timestamp("500.0 ns").unwrap(),
-            Timestamp(500)
-        );
+        assert_eq!(Timestamp::parse("567.0 ns"), Ok(Timestamp(567)));
     }
 
     #[test]
-    fn test_s() {
-        assert_eq!(
-            Interval::parse_timestamp("500.0 s").unwrap(),
-            Timestamp(500_000_000_000)
-        );
+    fn test_s_upper() {
+        assert_eq!(Timestamp::parse("123.4 S"), Ok(Timestamp(123_400_000_000)));
+    }
+
+    #[test]
+    fn test_ms_upper() {
+        assert_eq!(Timestamp::parse("234.5 MS"), Ok(Timestamp(234_500_000)));
+    }
+
+    #[test]
+    fn test_us_upper() {
+        assert_eq!(Timestamp::parse("345.6 US"), Ok(Timestamp(345_600)));
+    }
+
+    #[test]
+    fn test_ns_upper() {
+        assert_eq!(Timestamp::parse("567.0 NS"), Ok(Timestamp(567)));
+    }
+
+    #[test]
+    fn test_s_nospace() {
+        assert_eq!(Timestamp::parse("123.4s"), Ok(Timestamp(123_400_000_000)));
+    }
+
+    #[test]
+    fn test_ms_nospace() {
+        assert_eq!(Timestamp::parse("234.5ms"), Ok(Timestamp(234_500_000)));
+    }
+
+    #[test]
+    fn test_us_nospace() {
+        assert_eq!(Timestamp::parse("345.6us"), Ok(Timestamp(345_600)));
+    }
+
+    #[test]
+    fn test_ns_nospace() {
+        assert_eq!(Timestamp::parse("567.0ns"), Ok(Timestamp(567)));
     }
 
     #[test]
     fn test_no_unit() {
-        assert_eq!(
-            Interval::parse_timestamp("500.0").unwrap_err(),
-            IntervalParseError::NoUnit
-        );
+        assert_eq!(Timestamp::parse("500.0"), Err(TimestampParseError::NoUnit));
     }
 
     #[test]
     fn test_no_value() {
         assert_eq!(
-            Interval::parse_timestamp("ms").unwrap_err(),
-            IntervalParseError::NoValue
+            Timestamp::parse("ms"),
+            Err(TimestampParseError::InvalidValue)
         );
     }
 
     #[test]
     fn test_invalid_unit() {
         assert_eq!(
-            Interval::parse_timestamp("500.0 foo").unwrap_err(),
-            IntervalParseError::InvalidUnit
+            Timestamp::parse("500.0 foo"),
+            Err(TimestampParseError::InvalidUnit)
         );
     }
 
     #[test]
     fn test_invalid_value() {
         assert_eq!(
-            Interval::parse_timestamp("foo ms").unwrap_err(),
-            IntervalParseError::NoValue
+            Timestamp::parse("foo ms"),
+            Err(TimestampParseError::InvalidValue)
         );
     }
 
     #[test]
     fn test_invalid_value2() {
         assert_eq!(
-            Interval::parse_timestamp("500.0.0 ms").unwrap_err(),
-            IntervalParseError::InvalidValue
+            Timestamp::parse("500.0.0 ms"),
+            Err(TimestampParseError::InvalidValue)
         );
     }
 
     #[test]
     fn test_invalid_value3() {
         assert_eq!(
-            Interval::parse_timestamp("500.0.0").unwrap_err(),
-            IntervalParseError::InvalidValue
+            Timestamp::parse("500.0.0"),
+            Err(TimestampParseError::NoUnit)
         );
     }
 
     #[test]
     fn test_extra() {
         assert_eq!(
-            Interval::parse_timestamp("500.0 ms asdfadf").unwrap_err(),
-            IntervalParseError::InvalidValue
+            Timestamp::parse("500.0 ms asdfadf"),
+            Err(TimestampParseError::InvalidUnit)
         );
     }
 }
